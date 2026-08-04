@@ -188,11 +188,6 @@ export const getAuthorizedUsers = unstable_cache(fetchAuthorizedUsers, ["authori
   tags: ["authorized-users"],
 });
 
-export async function findAuthorizedUserByEmail(email: string): Promise<AuthorizedUser | null> {
-  const users = await getAuthorizedUsers();
-  return users.find((user) => user.correo === email.toLowerCase()) ?? null;
-}
-
 export async function addAuthorizedUser(input: {
   nombre: string;
   correo: string;

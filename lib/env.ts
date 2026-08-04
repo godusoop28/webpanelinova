@@ -54,11 +54,8 @@ export const env = {
     get secret() {
       return requireEnv("AUTH_SECRET");
     },
-    get googleClientId() {
-      return optionalEnv("AUTH_GOOGLE_ID");
-    },
-    get googleClientSecret() {
-      return optionalEnv("AUTH_GOOGLE_SECRET");
+    get password() {
+      return requireEnv("AUTH_PASSWORD");
     },
   },
 };
@@ -76,8 +73,7 @@ export function getMissingEnvVars(): string[] {
     "EASYBROKER_API_KEY",
     "MAKE_WEBHOOK_SECRET",
     "AUTH_SECRET",
-    "AUTH_GOOGLE_ID",
-    "AUTH_GOOGLE_SECRET",
+    "AUTH_PASSWORD",
   ];
   return required.filter((name) => !optionalEnv(name));
 }

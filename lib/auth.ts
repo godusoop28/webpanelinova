@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
-import { findAuthorizedUserByEmail } from "@/lib/google-sheets";
+import Credentials from "next-auth/providers/credentials";
+import { env } from "@/lib/env";
 import type { Role } from "@/lib/permissions";
 
 declare module "next-auth" {
@@ -15,38 +15,46 @@ declare module "next-auth" {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: [Google],
+  providers: [
+    Credentials({
+      credentials: {
+        password: { label: "Contraseña", type: "password" },
+      },
+      /**
+       * Single shared password for the whole panel: there is no per-user
+       * identity, so every successful login is treated as ADMIN.
+       */
+      authorize(credentials) {
+        if (
+          typeof credentials?.password === "string" &&
+          credentials.password.length > 0 &&
+          credentials.password === env.auth.password
+        ) {
+          return {
+            id: "panel",
+            name: "Century 21 Inova",
+            email: "panel@c21inova.com",
+            role: "ADMIN" as Role,
+          };
+        }
+        return null;
+      },
+    }),
+  ],
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
     error: "/login",
   },
   callbacks: {
-    /**
-     * Gate access at sign-in time: only emails present and active in the
-     * "Usuarios" Google Sheet tab may create a session. This runs on the
-     * server for every sign-in attempt, so it can't be bypassed from the
-     * client.
-     */
-    async signIn({ user }) {
-      if (!user.email) return false;
-      try {
-        const authorizedUser = await findAuthorizedUserByEmail(user.email);
-        return Boolean(authorizedUser?.activo);
-      } catch (error) {
-        console.error("No se pudo validar el usuario contra Google Sheets", error);
-        return false;
-      }
-    },
     async jwt({ token, user }) {
-      if (user?.email) {
-        const authorizedUser = await findAuthorizedUserByEmail(user.email);
-        (token as { role?: Role }).role = authorizedUser?.rol ?? "CONSULTA";
+      if (user) {
+        (token as { role?: Role }).role = (user as { role?: Role }).role ?? "ADMIN";
       }
       return token;
     },
     async session({ session, token }) {
-      session.user.role = (token as { role?: Role }).role ?? "CONSULTA";
+      session.user.role = (token as { role?: Role }).role ?? "ADMIN";
       return session;
     },
   },

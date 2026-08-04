@@ -25,15 +25,9 @@ export default async function ConfiguracionPage() {
       <Card>
         <CardHeader>
           <CardTitle>Cuenta</CardTitle>
-          <CardDescription>Sesión actual iniciada con Google OAuth.</CardDescription>
+          <CardDescription>Sesión iniciada con la contraseña de acceso al panel.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1 text-sm text-ink-700">
-          <p>
-            <span className="text-ink-500">Nombre:</span> {user.name ?? "—"}
-          </p>
-          <p>
-            <span className="text-ink-500">Correo:</span> {user.email}
-          </p>
           <p>
             <span className="text-ink-500">Rol:</span> {user.role}
           </p>

@@ -29,9 +29,9 @@ const INTEGRATIONS = [
     description: "Botón de sincronización manual del panel.",
   },
   {
-    name: "Google OAuth",
-    vars: ["AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", "AUTH_SECRET"],
-    description: "Inicio de sesión del panel.",
+    name: "Acceso al panel",
+    vars: ["AUTH_PASSWORD", "AUTH_SECRET"],
+    description: "Contraseña de inicio de sesión del panel.",
   },
 ];
 

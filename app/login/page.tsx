@@ -1,12 +1,11 @@
 import { auth, signIn } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
 import { ShieldCheck } from "lucide-react";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  AccessDenied:
-    "Tu correo no está autorizado o está inactivo. Solicita a un administrador que lo habilite en la pestaña Usuarios.",
-  Configuration:
-    "La autenticación con Google aún no está configurada. Contacta al equipo técnico.",
+  CredentialsSignin: "Contraseña incorrecta. Intenta de nuevo.",
+  Configuration: "El acceso al panel aún no está configurado. Contacta al equipo técnico.",
   Default: "No pudimos iniciar sesión. Intenta nuevamente.",
 };
 
@@ -51,51 +50,39 @@ export default async function LoginPage({
           )}
 
           <form
-            action={async () => {
+            action={async (formData: FormData) => {
               "use server";
-              await signIn("google", {
-                redirectTo: params.callbackUrl ?? "/dashboard",
-              });
+              try {
+                await signIn("credentials", {
+                  password: formData.get("password"),
+                  redirectTo: params.callbackUrl ?? "/dashboard",
+                });
+              } catch (error) {
+                if (error instanceof AuthError) {
+                  redirect(`/login?error=${error.type}`);
+                }
+                throw error;
+              }
             }}
+            className="space-y-3"
           >
+            <input
+              type="password"
+              name="password"
+              required
+              autoFocus
+              placeholder="Contraseña"
+              className="w-full rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 shadow-sm outline-none transition-colors focus:border-gold-500"
+            />
             <button
               type="submit"
-              className="flex w-full items-center justify-center gap-3 rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm font-medium text-ink-800 shadow-sm transition-colors hover:bg-ink-50"
+              className="flex w-full items-center justify-center gap-3 rounded-lg bg-ink-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-ink-800"
             >
-              <GoogleIcon />
-              Continuar con Google
+              Entrar
             </button>
           </form>
-
-          <p className="mt-5 text-center text-xs text-ink-400">
-            Tu acceso se valida contra la lista de usuarios autorizados de la
-            organización.
-          </p>
         </div>
       </div>
     </div>
-  );
-}
-
-function GoogleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
-      <path
-        fill="#4285F4"
-        d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82Z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.46 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.26v3.11A11.99 11.99 0 0 0 12 24Z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.27 14.28A7.2 7.2 0 0 1 4.89 12c0-.79.14-1.56.38-2.28V6.61H1.26A11.99 11.99 0 0 0 0 12c0 1.94.46 3.77 1.26 5.39l4.01-3.11Z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.26 6.61l4.01 3.11C6.22 6.88 8.87 4.77 12 4.77Z"
-      />
-    </svg>
   );
 }
