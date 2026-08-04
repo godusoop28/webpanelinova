@@ -1,8 +1,12 @@
 import "server-only";
 import { google } from "googleapis";
 import { unstable_cache } from "next/cache";
-import { env } from "@/lib/env";
+import { env, hasGoogleSheetsCredentials } from "@/lib/env";
+import { DEMO_ADVISORS, DEMO_LEADS, DEMO_MAKE_EVENTS, DEMO_USERS } from "@/lib/demo-data";
 import type { Role } from "@/lib/permissions";
+
+const DEMO_MODE_ERROR =
+  "Modo demostración: configura la cuenta de servicio de Google Sheets para guardar cambios reales.";
 
 const LEAD_SHEET = "'Hoja 1'";
 const ADVISOR_SHEET = "Asesores";
@@ -99,6 +103,7 @@ function mapLeadRow(row: string[], index: number): LeadRow {
 }
 
 async function fetchLeadRows(): Promise<LeadRow[]> {
+  if (!hasGoogleSheetsCredentials()) return DEMO_LEADS;
   const rows = await readRange(`${LEAD_SHEET}!A2:Q`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapLeadRow);
 }
@@ -139,6 +144,7 @@ function mapAdvisorRow(row: string[], index: number): AdvisorRow {
 }
 
 async function fetchAdvisorRows(): Promise<AdvisorRow[]> {
+  if (!hasGoogleSheetsCredentials()) return DEMO_ADVISORS;
   const rows = await readRange(`${ADVISOR_SHEET}!A2:H`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapAdvisorRow);
 }
@@ -179,6 +185,7 @@ function mapUserRow(row: string[], index: number): AuthorizedUser {
 }
 
 async function fetchAuthorizedUsers(): Promise<AuthorizedUser[]> {
+  if (!hasGoogleSheetsCredentials()) return DEMO_USERS;
   const rows = await readRange(`${USERS_SHEET}!A2:D`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapUserRow);
 }
@@ -194,6 +201,7 @@ export async function addAuthorizedUser(input: {
   rol: Role;
   activo: boolean;
 }): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
   await appendRow(`${USERS_SHEET}!A:D`, [
     input.nombre,
     input.correo.toLowerCase(),
@@ -206,6 +214,7 @@ export async function updateAuthorizedUser(
   rowNumber: number,
   input: { nombre: string; correo: string; rol: Role; activo: boolean }
 ): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
   await updateRow(`${USERS_SHEET}!A${rowNumber}:D${rowNumber}`, [
     input.nombre,
     input.correo.toLowerCase(),
@@ -215,6 +224,7 @@ export async function updateAuthorizedUser(
 }
 
 export async function toggleAuthorizedUser(rowNumber: number, activo: boolean): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: env.google.spreadsheetId,
@@ -259,6 +269,7 @@ function mapMakeEventRow(row: string[], index: number): MakeEventRow {
 }
 
 async function fetchMakeEvents(): Promise<MakeEventRow[]> {
+  if (!hasGoogleSheetsCredentials()) return DEMO_MAKE_EVENTS;
   const rows = await readRange(`${MAKE_EVENTS_SHEET}!A2:J`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapMakeEventRow).reverse();
 }
@@ -280,6 +291,7 @@ export async function appendMakeEvent(input: {
   mensaje?: string;
   ejecucionId?: string;
 }): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
   await appendRow(`${MAKE_EVENTS_SHEET}!A:J`, [
     input.fecha,
     input.escenario,

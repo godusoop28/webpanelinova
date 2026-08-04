@@ -31,7 +31,11 @@ export async function createUserAction(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
 
-  await addAuthorizedUser(parsed.data);
+  try {
+    await addAuthorizedUser(parsed.data);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Error desconocido" };
+  }
   revalidateTag("authorized-users", { expire: 0 });
   return { success: true };
 }
@@ -54,13 +58,21 @@ export async function updateUserAction(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
 
-  await updateAuthorizedUser(rowNumber, parsed.data);
+  try {
+    await updateAuthorizedUser(rowNumber, parsed.data);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Error desconocido" };
+  }
   revalidateTag("authorized-users", { expire: 0 });
   return { success: true };
 }
 
 export async function toggleUserAction(rowNumber: number, activo: boolean) {
   await requireRole("ADMIN");
-  await toggleAuthorizedUser(rowNumber, activo);
+  try {
+    await toggleAuthorizedUser(rowNumber, activo);
+  } catch {
+    return;
+  }
   revalidateTag("authorized-users", { expire: 0 });
 }

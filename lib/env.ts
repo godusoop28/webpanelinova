@@ -61,6 +61,20 @@ export const env = {
 };
 
 /**
+ * Whether the Google Sheets service account is fully configured. When it
+ * isn't, lib/google-sheets.ts serves seeded demo data instead of throwing,
+ * so the panel can be shown working before Sheets access is wired up.
+ */
+export function hasGoogleSheetsCredentials(): boolean {
+  return Boolean(
+    optionalEnv("GOOGLE_PROJECT_ID") &&
+      optionalEnv("GOOGLE_CLIENT_EMAIL") &&
+      optionalEnv("GOOGLE_PRIVATE_KEY") &&
+      optionalEnv("GOOGLE_SPREADSHEET_ID")
+  );
+}
+
+/**
  * Reports which integrations are missing configuration, for the
  * /integraciones panel and for startup diagnostics. Never throws.
  */
@@ -72,6 +86,7 @@ export function getMissingEnvVars(): string[] {
     "GOOGLE_SPREADSHEET_ID",
     "EASYBROKER_API_KEY",
     "MAKE_WEBHOOK_SECRET",
+    "MAKE_SYNC_WEBHOOK_URL",
     "AUTH_SECRET",
     "AUTH_PASSWORD",
   ];
