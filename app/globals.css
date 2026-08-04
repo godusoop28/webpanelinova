@@ -1,8 +1,35 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f6f3;
+  --foreground: #17140f;
+
+  /* Century 21 Inova brand palette */
+  --color-ink-950: #0d0d0c;
+  --color-ink-900: #17140f;
+  --color-ink-800: #262320;
+  --color-ink-700: #3a352f;
+  --color-ink-600: #514b43;
+  --color-ink-500: #6b6459;
+  --color-ink-400: #8b8378;
+  --color-ink-300: #b0a89a;
+  --color-ink-200: #d6cfc2;
+  --color-ink-100: #e9e4da;
+  --color-ink-50: #f4f1ea;
+
+  --color-gold-700: #8a6d24;
+  --color-gold-600: #a5822c;
+  --color-gold-500: #c19a3c;
+  --color-gold-400: #d3b25f;
+  --color-gold-300: #e3ca8c;
+  --color-gold-100: #f4ead0;
+
+  --color-surface: #ffffff;
+  --color-surface-muted: #faf9f6;
+  --color-border: #e4dfd4;
+
+  --shadow-card: 0 1px 2px rgba(23, 20, 15, 0.04), 0 4px 16px rgba(23, 20, 15, 0.06);
+  --shadow-card-hover: 0 2px 4px rgba(23, 20, 15, 0.06), 0 8px 24px rgba(23, 20, 15, 0.08);
 }
 
 @theme inline {
@@ -10,17 +37,58 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-ink-50: var(--color-ink-50);
+  --color-ink-100: var(--color-ink-100);
+  --color-ink-200: var(--color-ink-200);
+  --color-ink-300: var(--color-ink-300);
+  --color-ink-400: var(--color-ink-400);
+  --color-ink-500: var(--color-ink-500);
+  --color-ink-600: var(--color-ink-600);
+  --color-ink-700: var(--color-ink-700);
+  --color-ink-800: var(--color-ink-800);
+  --color-ink-900: var(--color-ink-900);
+  --color-ink-950: var(--color-ink-950);
+
+  --color-gold-100: var(--color-gold-100);
+  --color-gold-300: var(--color-gold-300);
+  --color-gold-400: var(--color-gold-400);
+  --color-gold-500: var(--color-gold-500);
+  --color-gold-600: var(--color-gold-600);
+  --color-gold-700: var(--color-gold-700);
+
+  --color-surface: var(--color-surface);
+  --color-surface-muted: var(--color-surface-muted);
+  --color-border: var(--color-border);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0f0e0c;
+    --foreground: #f1ede4;
+    --color-surface: #1a1815;
+    --color-surface-muted: #151311;
+    --color-border: #2c2823;
   }
+}
+
+* {
+  border-color: var(--color-border);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.875rem;
+  box-shadow: var(--shadow-card);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
 }
