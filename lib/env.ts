@@ -75,6 +75,25 @@ export function hasGoogleSheetsCredentials(): boolean {
 }
 
 /**
+ * Gate for lib/google-sheets.ts read functions: whether they're allowed to
+ * fall back to seeded demo data instead of hitting Sheets. Only true in
+ * `next dev` without credentials, so the panel can be demoed locally.
+ * `next build`/`next start` (and every Vercel deployment, preview or
+ * production — both set NODE_ENV=production) throw instead: a deployed
+ * panel must never silently render fake advisors because Sheets access
+ * broke or was never configured.
+ */
+export function shouldUseDemoData(): boolean {
+  if (hasGoogleSheetsCredentials()) return false;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Google Sheets no está configurado (faltan GOOGLE_PROJECT_ID, GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY o GOOGLE_SPREADSHEET_ID) y esta build es de producción, así que no se sirven datos de demostración."
+    );
+  }
+  return true;
+}
+
+/**
  * Reports which integrations are missing configuration, for the
  * /integraciones panel and for startup diagnostics. Never throws.
  */

@@ -1,7 +1,7 @@
 import "server-only";
 import { google } from "googleapis";
 import { unstable_cache } from "next/cache";
-import { env, hasGoogleSheetsCredentials } from "@/lib/env";
+import { env, hasGoogleSheetsCredentials, shouldUseDemoData } from "@/lib/env";
 import { DEMO_ADVISORS, DEMO_LEADS, DEMO_MAKE_EVENTS, DEMO_USERS } from "@/lib/demo-data";
 import { parseRoutesFromSheet, routesToSheetValue } from "@/lib/advisors";
 import type { Role } from "@/lib/permissions";
@@ -104,7 +104,7 @@ function mapLeadRow(row: string[], index: number): LeadRow {
 }
 
 async function fetchLeadRows(): Promise<LeadRow[]> {
-  if (!hasGoogleSheetsCredentials()) return DEMO_LEADS;
+  if (shouldUseDemoData()) return DEMO_LEADS;
   const rows = await readRange(`${LEAD_SHEET}!A2:Q`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapLeadRow);
 }
@@ -218,7 +218,7 @@ function advisorToSheetRow(id: string, input: AdvisorInput, pausadoHasta: string
 }
 
 async function fetchAdvisorRows(): Promise<AdvisorRow[]> {
-  if (!hasGoogleSheetsCredentials()) return DEMO_ADVISORS;
+  if (shouldUseDemoData()) return DEMO_ADVISORS;
   const rows = await readRange(`${ADVISOR_SHEET}!A2:M`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapAdvisorRow);
 }
@@ -338,7 +338,7 @@ function mapUserRow(row: string[], index: number): AuthorizedUser {
 }
 
 async function fetchAuthorizedUsers(): Promise<AuthorizedUser[]> {
-  if (!hasGoogleSheetsCredentials()) return DEMO_USERS;
+  if (shouldUseDemoData()) return DEMO_USERS;
   const rows = await readRange(`${USERS_SHEET}!A2:D`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapUserRow);
 }
@@ -422,7 +422,7 @@ function mapMakeEventRow(row: string[], index: number): MakeEventRow {
 }
 
 async function fetchMakeEvents(): Promise<MakeEventRow[]> {
-  if (!hasGoogleSheetsCredentials()) return DEMO_MAKE_EVENTS;
+  if (shouldUseDemoData()) return DEMO_MAKE_EVENTS;
   const rows = await readRange(`${MAKE_EVENTS_SHEET}!A2:J`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapMakeEventRow).reverse();
 }
