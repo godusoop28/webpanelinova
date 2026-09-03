@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { unstable_cache } from "next/cache";
 import { env, hasGoogleSheetsCredentials } from "@/lib/env";
 import { DEMO_ADVISORS, DEMO_LEADS, DEMO_MAKE_EVENTS, DEMO_USERS } from "@/lib/demo-data";
+import { parseRoutesFromSheet, routesToSheetValue } from "@/lib/advisors";
 import type { Role } from "@/lib/permissions";
 
 const DEMO_MODE_ERROR =
@@ -113,6 +114,13 @@ export const getLeadRows = unstable_cache(fetchLeadRows, ["leads"], {
   tags: ["leads"],
 });
 
+/**
+ * Uncached read, for callers that cannot tolerate stale data (the
+ * assignment engine's daily-limit check). Same cost as getLeadRows on a
+ * cache miss — a single Sheets range read — just without the cache layer.
+ */
+export const getLeadRowsFresh = fetchLeadRows;
+
 // ---------------------------------------------------------------------------
 // Asesores
 // ---------------------------------------------------------------------------
@@ -127,6 +135,49 @@ export interface AdvisorRow {
   tipoAsignacion: string;
   emailEasyBroker: string;
   manyChatId: string;
+  /** Peso de distribución ponderada (columna I). Default 5 si está vacío. */
+  peso: number;
+  /** Rutas permitidas (columna J). [] = participa en todas las rutas. */
+  rutasPermitidas: string[];
+  /** Columna K: fecha ISO, "INDEFINIDO", o null si no está pausado. */
+  pausadoHasta: string | null;
+  /** Columna L: máximo de leads por día. null = sin límite. */
+  limiteDiario: number | null;
+  /** Columna M. */
+  observaciones: string;
+}
+
+/** Input para crear/editar un asesor desde el panel (sin rowNumber/id/pausadoHasta). */
+export interface AdvisorInput {
+  nombre: string;
+  whatsapp: string;
+  rol: string;
+  activo: boolean;
+  tipoAsignacion: string;
+  emailEasyBroker: string;
+  manyChatId: string;
+  peso: number;
+  rutasPermitidas: string[];
+  limiteDiario: number | null;
+  observaciones: string;
+}
+
+const DEFAULT_ADVISOR_WEIGHT = 5;
+
+function parseBoolean(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return normalized === "true" || normalized === "sí" || normalized === "si";
+}
+
+function parseAdvisorWeight(raw: string): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_ADVISOR_WEIGHT;
+}
+
+function parseDailyLimit(raw: string): number | null {
+  if (!raw.trim()) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
 }
 
 function mapAdvisorRow(row: string[], index: number): AdvisorRow {
@@ -136,16 +187,39 @@ function mapAdvisorRow(row: string[], index: number): AdvisorRow {
     nombre: cell(row, 1),
     whatsapp: cell(row, 2),
     rol: cell(row, 3),
-    activo: cell(row, 4).toLowerCase() === "true" || cell(row, 4).toLowerCase() === "sí" || cell(row, 4).toLowerCase() === "si",
+    activo: parseBoolean(cell(row, 4)),
     tipoAsignacion: cell(row, 5),
     emailEasyBroker: cell(row, 6),
     manyChatId: cell(row, 7),
+    peso: parseAdvisorWeight(cell(row, 8)),
+    rutasPermitidas: parseRoutesFromSheet(cell(row, 9)),
+    pausadoHasta: cell(row, 10) || null,
+    limiteDiario: parseDailyLimit(cell(row, 11)),
+    observaciones: cell(row, 12),
   };
+}
+
+function advisorToSheetRow(id: string, input: AdvisorInput, pausadoHasta: string | null): (string | number)[] {
+  return [
+    id,
+    input.nombre,
+    input.whatsapp,
+    input.rol,
+    input.activo ? "TRUE" : "FALSE",
+    input.tipoAsignacion,
+    input.emailEasyBroker,
+    input.manyChatId,
+    input.peso,
+    routesToSheetValue(input.rutasPermitidas),
+    pausadoHasta ?? "",
+    input.limiteDiario ?? "",
+    input.observaciones,
+  ];
 }
 
 async function fetchAdvisorRows(): Promise<AdvisorRow[]> {
   if (!hasGoogleSheetsCredentials()) return DEMO_ADVISORS;
-  const rows = await readRange(`${ADVISOR_SHEET}!A2:H`);
+  const rows = await readRange(`${ADVISOR_SHEET}!A2:M`);
   return rows.filter((row) => row.some((value) => value?.trim())).map(mapAdvisorRow);
 }
 
@@ -153,6 +227,85 @@ export const getAdvisorRows = unstable_cache(fetchAdvisorRows, ["advisors"], {
   revalidate: 300,
   tags: ["advisors"],
 });
+
+/**
+ * Uncached read. Must be used for anything that decides who receives a
+ * lead right now (the assignment engine, the /select-advisor endpoint):
+ * deactivating an advisor in the panel has to take effect immediately,
+ * not after getAdvisorRows' 5-minute cache window.
+ */
+export const getAdvisorRowsFresh = fetchAdvisorRows;
+
+export async function getAdvisorById(id: string): Promise<AdvisorRow | null> {
+  const advisors = await fetchAdvisorRows();
+  return advisors.find((advisor) => advisor.id === id) ?? null;
+}
+
+/**
+ * Next numeric id after the highest one currently in use. Ids are never
+ * derived from row position, so re-ordering rows in Sheets can't change an
+ * advisor's identity.
+ */
+function generateAdvisorId(existing: AdvisorRow[]): string {
+  const numericIds = existing
+    .map((advisor) => Number(advisor.id))
+    .filter((value) => Number.isInteger(value) && value >= 0);
+  const next = numericIds.length > 0 ? Math.max(...numericIds) + 1 : 1;
+  return String(next);
+}
+
+export async function addAdvisor(input: AdvisorInput): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  const existing = await fetchAdvisorRows();
+  const id = generateAdvisorId(existing);
+  await appendRow(`${ADVISOR_SHEET}!A:M`, advisorToSheetRow(id, input, null));
+}
+
+/**
+ * Overwrites A:M for the row. Callers must pass through the advisor's
+ * current `pausadoHasta` (the edit form doesn't expose it — pausing has
+ * its own actions) so this never clobbers an active pause.
+ */
+export async function updateAdvisor(
+  rowNumber: number,
+  id: string,
+  input: AdvisorInput,
+  pausadoHasta: string | null
+): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  await updateRow(`${ADVISOR_SHEET}!A${rowNumber}:M${rowNumber}`, advisorToSheetRow(id, input, pausadoHasta));
+}
+
+export async function toggleAdvisor(rowNumber: number, activo: boolean): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: env.google.spreadsheetId,
+    range: `${ADVISOR_SHEET}!E${rowNumber}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[activo ? "TRUE" : "FALSE"]] },
+  });
+}
+
+async function setAdvisorPauseCell(rowNumber: number, value: string): Promise<void> {
+  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: env.google.spreadsheetId,
+    range: `${ADVISOR_SHEET}!K${rowNumber}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[value]] },
+  });
+}
+
+/** `pausadoHasta` is an ISO instant, or advisors.PAUSE_INDEFINITE. */
+export async function pauseAdvisor(rowNumber: number, pausadoHasta: string): Promise<void> {
+  await setAdvisorPauseCell(rowNumber, pausadoHasta);
+}
+
+export async function resumeAdvisor(rowNumber: number): Promise<void> {
+  await setAdvisorPauseCell(rowNumber, "");
+}
 
 // ---------------------------------------------------------------------------
 // Usuarios (autenticación / autorización)

@@ -1,74 +1,90 @@
+import { UserCheck, UserX, PauseCircle, Users } from "lucide-react";
 import { requireSection } from "@/lib/dal";
-import { getAdvisorRows } from "@/lib/google-sheets";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { getAdvisorRows, getLeadRows, type AdvisorRow as AdvisorRowData } from "@/lib/google-sheets";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { EmptyState, ErrorState } from "@/components/ui/state";
+import { AddAdvisorPanel } from "@/components/asesores/add-advisor-panel";
+import { AdvisorRow } from "@/components/asesores/advisor-row";
+import { DistributionTest } from "@/components/asesores/distribution-test";
+import { buildTodayLeadCounts, countTodayLeadsForAdvisor, isPaused, type AdvisorLeadCounts } from "@/lib/advisors";
 
 export default async function AsesoresPage() {
   await requireSection("asesores");
 
-  let advisors: Awaited<ReturnType<typeof getAdvisorRows>> = [];
+  let advisors: AdvisorRowData[] = [];
+  let todayCounts: AdvisorLeadCounts = { byId: new Map(), byWhatsapp: new Map(), byNombre: new Map() };
   let loadError: string | null = null;
   try {
-    advisors = await getAdvisorRows();
+    const [advisorRows, leadRows] = await Promise.all([getAdvisorRows(), getLeadRows()]);
+    advisors = advisorRows;
+    todayCounts = buildTodayLeadCounts(leadRows, new Date());
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Error desconocido";
   }
 
+  const now = new Date();
+  const total = advisors.length;
+  const activos = advisors.filter((a) => a.activo && !isPaused(a, now)).length;
+  const pausados = advisors.filter((a) => a.activo && isPaused(a, now)).length;
+  const inactivos = advisors.filter((a) => !a.activo).length;
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-ink-900">Asesores</h1>
-        <p className="text-sm text-ink-500">
-          Equipo comercial sincronizado desde la pestaña Asesores de Google Sheets.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-ink-900">Asesores</h1>
+          <p className="text-sm text-ink-500">
+            Administra los asesores que participan en la distribución automática de leads.
+          </p>
+        </div>
+        <AddAdvisorPanel />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KpiCard label="Total asesores" icon={Users} status="ready" value={total} />
+        <KpiCard label="Activos" icon={UserCheck} status="ready" value={activos} />
+        <KpiCard label="Pausados" icon={PauseCircle} status="ready" value={pausados} />
+        <KpiCard label="Inactivos" icon={UserX} status="ready" value={inactivos} />
       </div>
 
       <Card>
-        {loadError ? (
+        <CardHeader>
+          <div>
+            <CardTitle>Probar distribución</CardTitle>
+            <CardDescription>
+              Simula la ruleta ponderada sin afectar leads reales, EasyBroker ni ManyChat.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <DistributionTest />
+        </CardContent>
+      </Card>
+
+      {loadError ? (
+        <Card>
           <div className="p-5">
             <ErrorState title="No se pudo cargar Google Sheets" description={loadError} />
           </div>
-        ) : advisors.length === 0 ? (
+        </Card>
+      ) : advisors.length === 0 ? (
+        <Card>
           <div className="p-5">
             <EmptyState title="Sin asesores registrados" />
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-400">
-                  <th className="px-5 py-3 font-medium">Nombre</th>
-                  <th className="px-5 py-3 font-medium">WhatsApp</th>
-                  <th className="px-5 py-3 font-medium">Rol</th>
-                  <th className="px-5 py-3 font-medium">Tipo de asignación</th>
-                  <th className="px-5 py-3 font-medium">Email EasyBroker</th>
-                  <th className="px-5 py-3 font-medium">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {advisors.map((advisor) => (
-                  <tr
-                    key={advisor.id || advisor.rowNumber}
-                    className="border-b border-ink-50 last:border-0 hover:bg-surface-muted"
-                  >
-                    <td className="px-5 py-3 font-medium text-ink-900">{advisor.nombre || "—"}</td>
-                    <td className="px-5 py-3 text-ink-600">{advisor.whatsapp || "—"}</td>
-                    <td className="px-5 py-3 text-ink-600">{advisor.rol || "—"}</td>
-                    <td className="px-5 py-3 text-ink-600">{advisor.tipoAsignacion || "—"}</td>
-                    <td className="px-5 py-3 text-ink-600">{advisor.emailEasyBroker || "—"}</td>
-                    <td className="px-5 py-3">
-                      <Badge tone={advisor.activo ? "success" : "neutral"}>
-                        {advisor.activo ? "Activo" : "Inactivo"}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {advisors.map((advisor) => (
+            <AdvisorRow
+              key={advisor.id || advisor.rowNumber}
+              advisor={advisor}
+              leadsHoy={countTodayLeadsForAdvisor(advisor, todayCounts)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

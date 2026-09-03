@@ -24,11 +24,11 @@ const ADVISOR_NAMES = [
 ];
 
 export const DEMO_ADVISORS: AdvisorRow[] = [
-  { rowNumber: 2, id: "2", nombre: ADVISOR_NAMES[0], whatsapp: "5215512345671", rol: "Asesor", activo: true, tipoAsignacion: "Ambas", emailEasyBroker: "mariana@c21inova.com", manyChatId: "1000000001" },
-  { rowNumber: 3, id: "3", nombre: ADVISOR_NAMES[1], whatsapp: "5215512345672", rol: "Asesor", activo: true, tipoAsignacion: "Aleatoria", emailEasyBroker: "luis@c21inova.com", manyChatId: "1000000002" },
-  { rowNumber: 4, id: "4", nombre: ADVISOR_NAMES[2], whatsapp: "5215512345673", rol: "Coordinadora", activo: true, tipoAsignacion: "Ambas", emailEasyBroker: "karla@c21inova.com", manyChatId: "1000000003" },
-  { rowNumber: 5, id: "5", nombre: ADVISOR_NAMES[3], whatsapp: "5215512345674", rol: "Asesor", activo: false, tipoAsignacion: "Exclusiva", emailEasyBroker: "roberto@c21inova.com", manyChatId: "1000000004" },
-  { rowNumber: 6, id: "6", nombre: ADVISOR_NAMES[4], whatsapp: "5215512345675", rol: "Asesor", activo: true, tipoAsignacion: "Aleatoria", emailEasyBroker: "daniela@c21inova.com", manyChatId: "1000000005" },
+  { rowNumber: 2, id: "2", nombre: ADVISOR_NAMES[0], whatsapp: "5215512345671", rol: "Asesor", activo: true, tipoAsignacion: "Ambas", emailEasyBroker: "mariana@c21inova.com", manyChatId: "1000000001", peso: 8, rutasPermitidas: [], pausadoHasta: null, limiteDiario: 15, observaciones: "" },
+  { rowNumber: 3, id: "3", nombre: ADVISOR_NAMES[1], whatsapp: "5215512345672", rol: "Asesor", activo: true, tipoAsignacion: "Aleatoria", emailEasyBroker: "luis@c21inova.com", manyChatId: "1000000002", peso: 5, rutasPermitidas: ["Explorar opciones", "Campaña propiedad"], pausadoHasta: null, limiteDiario: null, observaciones: "" },
+  { rowNumber: 4, id: "4", nombre: ADVISOR_NAMES[2], whatsapp: "5215512345673", rol: "Coordinadora", activo: true, tipoAsignacion: "Ambas", emailEasyBroker: "karla@c21inova.com", manyChatId: "1000000003", peso: 5, rutasPermitidas: [], pausadoHasta: null, limiteDiario: null, observaciones: "No participa en la ruleta (coordinación)." },
+  { rowNumber: 5, id: "5", nombre: ADVISOR_NAMES[3], whatsapp: "5215512345674", rol: "Asesor", activo: false, tipoAsignacion: "Exclusiva", emailEasyBroker: "roberto@c21inova.com", manyChatId: "1000000004", peso: 5, rutasPermitidas: [], pausadoHasta: null, limiteDiario: null, observaciones: "" },
+  { rowNumber: 6, id: "6", nombre: ADVISOR_NAMES[4], whatsapp: "5215512345675", rol: "Asesor", activo: true, tipoAsignacion: "Aleatoria", emailEasyBroker: "daniela@c21inova.com", manyChatId: "1000000005", peso: 3, rutasPermitidas: [], pausadoHasta: daysAgo(-1, 9, 0), limiteDiario: 5, observaciones: "Pausada por vacaciones." },
 ];
 
 const ORIGINS = ["Facebook Ads", "Instagram", "Google Ads", "WhatsApp orgánico", "Referido"];
