@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/dal";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { env } from "@/lib/env";
+import { env, isDemoModeActive } from "@/lib/env";
 
 function safeRead(read: () => string): string | null {
   try {
@@ -25,7 +25,11 @@ export default async function ConfiguracionPage() {
       <Card>
         <CardHeader>
           <CardTitle>Cuenta</CardTitle>
-          <CardDescription>Sesión iniciada con la contraseña de acceso al panel.</CardDescription>
+          <CardDescription>
+            {isDemoModeActive()
+              ? "Modo demostración: sesión automática, sin contraseña."
+              : "Sesión iniciada con la contraseña de acceso al panel."}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-1 text-sm text-ink-700">
           <p>

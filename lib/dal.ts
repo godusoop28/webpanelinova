@@ -1,6 +1,7 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isDemoModeActive } from "@/lib/env";
 import {
   canAccessSection,
   type PanelSection,
@@ -14,13 +15,27 @@ export interface SessionUser {
   role: Role;
 }
 
+const DEMO_SESSION_USER: SessionUser = {
+  name: "Demo Century 21 Inova",
+  email: "demo@c21inova.com",
+  image: null,
+  role: "ADMIN",
+};
+
 /**
  * The real authorization boundary. Every protected page, layout, Server
  * Action, and Route Handler must call this (directly or via
  * requireSection) before touching Sheets/EasyBroker data — proxy.ts only
  * performs a fast, optimistic redirect and must never be relied on alone.
+ *
+ * When DEMO_MODE=true (a deliberate, temporary opt-in for showing the
+ * panel to someone outside the team) this skips the login check entirely
+ * and hands back a fixed ADMIN identity, so the demo needs no password.
  */
 export async function requireUser(): Promise<SessionUser> {
+  if (isDemoModeActive()) {
+    return DEMO_SESSION_USER;
+  }
   const session = await auth();
   if (!session?.user?.email) {
     redirect("/login");

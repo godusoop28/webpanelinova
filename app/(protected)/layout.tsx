@@ -1,7 +1,11 @@
 import { requireUser } from "@/lib/dal";
 import { Sidebar } from "@/components/sidebar";
 import { ALL_SECTIONS, canAccessSection } from "@/lib/permissions";
-import { hasGoogleSheetsCredentials } from "@/lib/env";
+import { isServingDemoData } from "@/lib/env";
+
+// See app/page.tsx: DEMO_MODE (and the login bypass it drives via
+// requireUser) must be re-checked per request, not baked in at build time.
+export const dynamic = "force-dynamic";
 
 export default async function ProtectedLayout({
   children,
@@ -10,7 +14,7 @@ export default async function ProtectedLayout({
 }) {
   const user = await requireUser();
   const items = ALL_SECTIONS.filter(({ section }) => canAccessSection(user.role, section));
-  const isDemoMode = !hasGoogleSheetsCredentials();
+  const isDemoMode = isServingDemoData();
 
   return (
     <div className="flex min-h-screen w-full">

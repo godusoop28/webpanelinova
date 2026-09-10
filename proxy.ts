@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import { isDemoModeActive } from "@/lib/env";
 
 const PUBLIC_ROUTES = ["/login"];
 
@@ -12,6 +13,9 @@ const PUBLIC_ROUTES = ["/login"];
  * throughout app/(protected).
  */
 export async function proxy(request: NextRequest) {
+  if (isDemoModeActive()) {
+    return NextResponse.next();
+  }
   const { pathname } = request.nextUrl;
   const session = await auth();
   const isAuthenticated = Boolean(session?.user);

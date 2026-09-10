@@ -2,6 +2,10 @@ import { auth, signIn } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { ShieldCheck } from "lucide-react";
+import { isDemoModeActive } from "@/lib/env";
+
+// See app/page.tsx: DEMO_MODE must be re-checked per request.
+export const dynamic = "force-dynamic";
 
 const ERROR_MESSAGES: Record<string, string> = {
   CredentialsSignin: "Contraseña incorrecta. Intenta de nuevo.",
@@ -14,6 +18,9 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string; callbackUrl?: string }>;
 }) {
+  if (isDemoModeActive()) {
+    redirect("/dashboard");
+  }
   const session = await auth();
   if (session?.user) {
     redirect("/dashboard");

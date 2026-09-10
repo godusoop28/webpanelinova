@@ -75,19 +75,38 @@ export function hasGoogleSheetsCredentials(): boolean {
 }
 
 /**
+ * Explicit, temporary opt-in for showing the panel to someone outside the
+ * team (a client demo) with seeded data and without requiring the login
+ * password. Unlike "Sheets isn't configured", this must never turn on by
+ * accident, so it's a single dedicated flag instead of being inferred from
+ * missing credentials. Set DEMO_MODE=true on the hosting provider for the
+ * demo window and remove it (or set it to anything else) right after.
+ */
+export function isDemoModeActive(): boolean {
+  return optionalEnv("DEMO_MODE") === "true";
+}
+
+/** Whether the panel is currently rendering seeded data instead of real Sheets rows. */
+export function isServingDemoData(): boolean {
+  return isDemoModeActive() || !hasGoogleSheetsCredentials();
+}
+
+/**
  * Gate for lib/google-sheets.ts read functions: whether they're allowed to
- * fall back to seeded demo data instead of hitting Sheets. Only true in
- * `next dev` without credentials, so the panel can be demoed locally.
- * `next build`/`next start` (and every Vercel deployment, preview or
- * production — both set NODE_ENV=production) throw instead: a deployed
- * panel must never silently render fake advisors because Sheets access
- * broke or was never configured.
+ * fall back to seeded demo data instead of hitting Sheets. Without
+ * DEMO_MODE, only true in `next dev` without credentials, so the panel can
+ * be demoed locally. `next build`/`next start` (and every Vercel
+ * deployment, preview or production — both set NODE_ENV=production) throw
+ * instead: a deployed panel must never silently render fake advisors
+ * because Sheets access broke or was never configured, unless DEMO_MODE
+ * explicitly says this is a deliberate demo.
  */
 export function shouldUseDemoData(): boolean {
+  if (isDemoModeActive()) return true;
   if (hasGoogleSheetsCredentials()) return false;
   if (process.env.NODE_ENV === "production") {
     throw new Error(
-      "Google Sheets no está configurado (faltan GOOGLE_PROJECT_ID, GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY o GOOGLE_SPREADSHEET_ID) y esta build es de producción, así que no se sirven datos de demostración."
+      "Google Sheets no está configurado (faltan GOOGLE_PROJECT_ID, GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY o GOOGLE_SPREADSHEET_ID) y esta build es de producción, así que no se sirven datos de demostración. Define DEMO_MODE=true si esto es una demo deliberada."
     );
   }
   return true;

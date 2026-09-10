@@ -1,7 +1,7 @@
 import "server-only";
 import { google } from "googleapis";
 import { unstable_cache } from "next/cache";
-import { env, hasGoogleSheetsCredentials, shouldUseDemoData } from "@/lib/env";
+import { env, isServingDemoData, shouldUseDemoData } from "@/lib/env";
 import { DEMO_ADVISORS, DEMO_LEADS, DEMO_MAKE_EVENTS, DEMO_USERS } from "@/lib/demo-data";
 import { parseRoutesFromSheet, routesToSheetValue } from "@/lib/advisors";
 import type { Role } from "@/lib/permissions";
@@ -255,7 +255,7 @@ function generateAdvisorId(existing: AdvisorRow[]): string {
 }
 
 export async function addAdvisor(input: AdvisorInput): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   const existing = await fetchAdvisorRows();
   const id = generateAdvisorId(existing);
   await appendRow(`${ADVISOR_SHEET}!A:M`, advisorToSheetRow(id, input, null));
@@ -272,12 +272,12 @@ export async function updateAdvisor(
   input: AdvisorInput,
   pausadoHasta: string | null
 ): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   await updateRow(`${ADVISOR_SHEET}!A${rowNumber}:M${rowNumber}`, advisorToSheetRow(id, input, pausadoHasta));
 }
 
 export async function toggleAdvisor(rowNumber: number, activo: boolean): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: env.google.spreadsheetId,
@@ -288,7 +288,7 @@ export async function toggleAdvisor(rowNumber: number, activo: boolean): Promise
 }
 
 async function setAdvisorPauseCell(rowNumber: number, value: string): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: env.google.spreadsheetId,
@@ -354,7 +354,7 @@ export async function addAuthorizedUser(input: {
   rol: Role;
   activo: boolean;
 }): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   await appendRow(`${USERS_SHEET}!A:D`, [
     input.nombre,
     input.correo.toLowerCase(),
@@ -367,7 +367,7 @@ export async function updateAuthorizedUser(
   rowNumber: number,
   input: { nombre: string; correo: string; rol: Role; activo: boolean }
 ): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   await updateRow(`${USERS_SHEET}!A${rowNumber}:D${rowNumber}`, [
     input.nombre,
     input.correo.toLowerCase(),
@@ -377,7 +377,7 @@ export async function updateAuthorizedUser(
 }
 
 export async function toggleAuthorizedUser(rowNumber: number, activo: boolean): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: env.google.spreadsheetId,
@@ -444,7 +444,7 @@ export async function appendMakeEvent(input: {
   mensaje?: string;
   ejecucionId?: string;
 }): Promise<void> {
-  if (!hasGoogleSheetsCredentials()) throw new Error(DEMO_MODE_ERROR);
+  if (isServingDemoData()) throw new Error(DEMO_MODE_ERROR);
   await appendRow(`${MAKE_EVENTS_SHEET}!A:J`, [
     input.fecha,
     input.escenario,

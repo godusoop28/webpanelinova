@@ -3,7 +3,7 @@
 import { revalidateTag } from "next/cache";
 import { requireRole } from "@/lib/dal";
 import { appendMakeEvent } from "@/lib/google-sheets";
-import { env } from "@/lib/env";
+import { env, isDemoModeActive } from "@/lib/env";
 
 export interface SyncState {
   status: "idle" | "success" | "error";
@@ -14,6 +14,13 @@ const SYNC_SCENARIO = "Sincronización manual";
 
 export async function runSyncAction(): Promise<SyncState> {
   const user = await requireRole("ADMIN");
+
+  if (isDemoModeActive()) {
+    return {
+      status: "error",
+      message: "Modo demostración: la sincronización no se ejecuta realmente.",
+    };
+  }
 
   let webhookUrl: string | undefined;
   try {
