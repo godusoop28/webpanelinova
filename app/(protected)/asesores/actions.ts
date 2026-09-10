@@ -180,7 +180,12 @@ export async function simulateDistributionAction(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
 
-  const candidates = await getRotationCandidates(parsed.data.route);
+  let candidates: Awaited<ReturnType<typeof getRotationCandidates>>;
+  try {
+    candidates = await getRotationCandidates(parsed.data.route);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Error desconocido" };
+  }
   if (candidates.length === 0) {
     return { error: "No hay asesores disponibles para esta ruta.", totalCandidates: 0 };
   }

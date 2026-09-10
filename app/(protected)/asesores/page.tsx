@@ -42,10 +42,10 @@ export default async function AsesoresPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard label="Total asesores" icon={Users} status="ready" value={total} />
-        <KpiCard label="Activos" icon={UserCheck} status="ready" value={activos} />
-        <KpiCard label="Pausados" icon={PauseCircle} status="ready" value={pausados} />
-        <KpiCard label="Inactivos" icon={UserX} status="ready" value={inactivos} />
+        <KpiCard label="Total asesores" icon={Users} status={loadError ? "error" : "ready"} value={total} />
+        <KpiCard label="Activos" icon={UserCheck} status={loadError ? "error" : "ready"} value={activos} />
+        <KpiCard label="Pausados" icon={PauseCircle} status={loadError ? "error" : "ready"} value={pausados} />
+        <KpiCard label="Inactivos" icon={UserX} status={loadError ? "error" : "ready"} value={inactivos} />
       </div>
 
       <Card>
