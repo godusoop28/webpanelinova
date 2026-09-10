@@ -55,7 +55,7 @@ export default async function PropiedadesPage({
                         className="absolute inset-0 size-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-ink-400">
+                      <div className="flex h-full items-center justify-center text-xs text-ink-500">
                         Sin imagen
                       </div>
                     )}

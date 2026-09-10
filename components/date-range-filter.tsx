@@ -76,7 +76,7 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
             onChange={(e) => setCustomFrom(e.target.value)}
             className="rounded-md border border-ink-200 px-2 py-1.5 text-xs text-ink-700"
           />
-          <span className="text-xs text-ink-400">a</span>
+          <span className="text-xs text-ink-500">a</span>
           <input
             type="date"
             value={customTo}

@@ -22,7 +22,7 @@ export function EmptyState({
         className
       )}
     >
-      <Icon className="size-8 text-ink-300" aria-hidden />
+      <Icon className="size-8 text-ink-400" aria-hidden />
       <p className="text-sm font-medium text-ink-700">{title}</p>
       {description && <p className="max-w-sm text-xs text-ink-500">{description}</p>}
       {action}

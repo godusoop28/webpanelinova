@@ -44,7 +44,7 @@ export default async function UsuariosPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-400">
+                <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                   <th className="px-5 py-3 font-medium">Usuario</th>
                   <th className="px-5 py-3 font-medium">Estado</th>
                   <th className="px-5 py-3 font-medium"></th>

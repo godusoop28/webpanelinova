@@ -160,26 +160,26 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3 md:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-400">WhatsApp</dt>
+          <dt className="text-xs text-ink-500">WhatsApp</dt>
           <dd className="text-ink-700">{advisor.whatsapp || "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-400">Email EasyBroker</dt>
+          <dt className="text-xs text-ink-500">Email EasyBroker</dt>
           <dd className="truncate text-ink-700">{advisor.emailEasyBroker || "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-400">Tipo de asignación</dt>
+          <dt className="text-xs text-ink-500">Tipo de asignación</dt>
           <dd className="text-ink-700">{advisor.tipoAsignacion || "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-400">Leads hoy</dt>
+          <dt className="text-xs text-ink-500">Leads hoy</dt>
           <dd className="text-ink-700">
             {leadsHoy}
             {advisor.limiteDiario !== null ? ` / ${advisor.limiteDiario}` : " · Sin límite"}
           </dd>
         </div>
         <div className="col-span-2 sm:col-span-3 md:col-span-4">
-          <dt className="text-xs text-ink-400">Rutas</dt>
+          <dt className="text-xs text-ink-500">Rutas</dt>
           <dd className="mt-1 flex flex-wrap gap-1.5">
             {advisor.rutasPermitidas.length === 0 ? (
               <Badge tone="neutral">Todas las rutas</Badge>
@@ -194,7 +194,7 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
         </div>
         {advisor.observaciones && (
           <div className="col-span-2 sm:col-span-3 md:col-span-4">
-            <dt className="text-xs text-ink-400">Observaciones</dt>
+            <dt className="text-xs text-ink-500">Observaciones</dt>
             <dd className="text-ink-600">{advisor.observaciones}</dd>
           </div>
         )}

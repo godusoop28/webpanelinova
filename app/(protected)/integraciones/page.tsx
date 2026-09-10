@@ -129,7 +129,7 @@ export default async function IntegracionesPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-400">
+                  <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                     <th className="py-2 pr-4 font-medium">Fecha</th>
                     <th className="py-2 pr-4 font-medium">Escenario</th>
                     <th className="py-2 pr-4 font-medium">Evento</th>

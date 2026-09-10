@@ -62,16 +62,6 @@
   --color-border: var(--color-border);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f0e0c;
-    --foreground: #f1ede4;
-    --color-surface: #1a1815;
-    --color-surface-muted: #151311;
-    --color-border: #2c2823;
-  }
-}
-
 * {
   border-color: var(--color-border);
 }

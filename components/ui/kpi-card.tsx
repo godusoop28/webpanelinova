@@ -52,7 +52,7 @@ export function KpiCard({
           </div>
         )}
 
-        {status === "empty" && <p className="text-sm text-ink-400">{emptyMessage}</p>}
+        {status === "empty" && <p className="text-sm text-ink-500">{emptyMessage}</p>}
 
         {status === "ready" && (
           <div className="flex items-baseline gap-2">

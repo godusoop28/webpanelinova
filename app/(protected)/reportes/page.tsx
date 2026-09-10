@@ -95,7 +95,7 @@ export default async function ReportesPage({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-400">
+                  <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                     <th className="px-5 py-3 font-medium">Asesor</th>
                     <th className="px-5 py-3 font-medium">Leads recibidos</th>
                     <th className="px-5 py-3 font-medium">Notificados</th>

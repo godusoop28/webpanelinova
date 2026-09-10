@@ -93,7 +93,7 @@ export default async function LeadsPage({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-400">
+                <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                   <th className="px-5 py-3 font-medium">Fecha</th>
                   <th className="px-5 py-3 font-medium">Nombre</th>
                   <th className="px-5 py-3 font-medium">Interés</th>
