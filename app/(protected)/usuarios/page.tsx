@@ -41,8 +41,8 @@ export default async function UsuariosPage() {
             <EmptyState title="Sin usuarios registrados" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="md:overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                   <th className="px-5 py-3 font-medium">Usuario</th>

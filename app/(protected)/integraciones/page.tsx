@@ -121,8 +121,8 @@ export default async function IntegracionesPage() {
           ) : events.length === 0 ? (
             <EmptyState title="Sin eventos registrados todavía" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <div className="md:overflow-x-auto">
+              <table className="responsive-table w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                     <th className="py-2 pr-4 font-medium">Fecha</th>
@@ -135,15 +135,15 @@ export default async function IntegracionesPage() {
                 <tbody>
                   {events.slice(0, 25).map((event) => (
                     <tr key={event.rowNumber} className="border-b border-ink-50 last:border-0">
-                      <td className="py-2 pr-4 text-ink-600 whitespace-nowrap">{formatDate(event.fecha)}</td>
-                      <td className="py-2 pr-4 text-ink-600">{event.escenario}</td>
-                      <td className="py-2 pr-4 text-ink-600">{event.evento}</td>
-                      <td className="py-2 pr-4">
+                      <td data-label="Fecha" className="py-2 pr-4 text-ink-600 whitespace-nowrap">{formatDate(event.fecha)}</td>
+                      <td data-label="Escenario" className="py-2 pr-4 text-ink-600">{event.escenario}</td>
+                      <td data-label="Evento" className="py-2 pr-4 text-ink-600">{event.evento}</td>
+                      <td data-label="Estado" className="py-2 pr-4">
                         <Badge tone={event.estado.toLowerCase().includes("error") ? "danger" : "success"}>
                           {event.estado || "—"}
                         </Badge>
                       </td>
-                      <td className="py-2 pr-4 text-ink-600">{event.lead || "—"}</td>
+                      <td data-label="Lead" className="py-2 pr-4 text-ink-600">{event.lead || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

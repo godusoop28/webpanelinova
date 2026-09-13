@@ -57,7 +57,8 @@ export function LeadsByDayChart({ data }: { data: { date: string; total: number 
 }
 
 export function LeadsByOriginChart({ data }: { data: { name: string; value: number }[] }) {
-  const filtered = data.filter((d) => d.value > 0);
+  const filtered = data.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
+  const total = filtered.reduce((sum, d) => sum + d.value, 0);
   return (
     <Card>
       <CardHeader>
@@ -65,29 +66,47 @@ export function LeadsByOriginChart({ data }: { data: { name: string; value: numb
       </CardHeader>
       <CardContent>
         {filtered.length > 0 ? (
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie
-                data={filtered}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={55}
-                outerRadius={90}
-                paddingAngle={2}
-              >
-                {filtered.map((entry, index) => (
-                  <Cell key={entry.name} fill={SLICE_COLORS[index % SLICE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  borderRadius: 8,
-                  border: "1px solid #e4dfd4",
-                  fontSize: 12,
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+          <div className="flex flex-col items-center gap-4 sm:flex-row">
+            <ResponsiveContainer width="100%" height={220} className="sm:max-w-[220px]">
+              <PieChart>
+                <Pie
+                  data={filtered}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={55}
+                  outerRadius={90}
+                  paddingAngle={2}
+                >
+                  {filtered.map((entry, index) => (
+                    <Cell key={entry.name} fill={SLICE_COLORS[index % SLICE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: 8,
+                    border: "1px solid #e4dfd4",
+                    fontSize: 12,
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <ul className="w-full min-w-0 flex-1 space-y-1.5">
+              {filtered.map((entry, index) => (
+                <li key={entry.name} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: SLICE_COLORS[index % SLICE_COLORS.length] }}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1 truncate text-ink-700">{entry.name}</span>
+                  <span className="shrink-0 font-medium text-ink-900">{entry.value}</span>
+                  <span className="w-10 shrink-0 text-right text-xs text-ink-400">
+                    {total > 0 ? Math.round((entry.value / total) * 100) : 0}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : (
           <EmptyState title="Sin datos de origen" />
         )}

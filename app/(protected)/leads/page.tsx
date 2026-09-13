@@ -90,8 +90,8 @@ export default async function LeadsPage({
             />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="md:overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                   <th className="px-5 py-3 font-medium">Fecha</th>
@@ -110,22 +110,22 @@ export default async function LeadsPage({
                     key={`${lead.rowNumber}-${lead.telefono}`}
                     className="border-b border-ink-50 last:border-0 hover:bg-surface-muted"
                   >
-                    <td className="whitespace-nowrap px-5 py-3 text-ink-600">
+                    <td data-label="Fecha" className="whitespace-nowrap px-5 py-3 text-ink-600">
                       {formatDate(lead.fechaHora)}
                     </td>
-                    <td className="px-5 py-3 font-medium text-ink-900">{lead.nombre || "—"}</td>
-                    <td className="px-5 py-3 text-ink-600">{lead.tipoInteres || "—"}</td>
-                    <td className="px-5 py-3 text-ink-600">{lead.origen || "—"}</td>
-                    <td className="px-5 py-3 text-ink-600">{lead.asesorAsignado || "Sin asignar"}</td>
-                    <td className="px-5 py-3">
+                    <td data-label="Nombre" className="px-5 py-3 font-medium text-ink-900">{lead.nombre || "—"}</td>
+                    <td data-label="Interés" className="px-5 py-3 text-ink-600">{lead.tipoInteres || "—"}</td>
+                    <td data-label="Origen" className="px-5 py-3 text-ink-600">{lead.origen || "—"}</td>
+                    <td data-label="Asesor" className="px-5 py-3 text-ink-600">{lead.asesorAsignado || "Sin asignar"}</td>
+                    <td data-label="Estado EasyBroker" className="px-5 py-3">
                       <Badge tone="neutral">{lead.estadoEasyBroker || "Sin dato"}</Badge>
                     </td>
-                    <td className="px-5 py-3">
+                    <td data-label="Notificación" className="px-5 py-3">
                       <Badge tone={statusTone(lead.estadoEnvioAsesor)}>
                         {lead.estadoEnvioAsesor || "Sin dato"}
                       </Badge>
                     </td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-5 py-3 text-left md:text-right">
                       {lead.linkWhatsappCliente && (
                         <a
                           href={lead.linkWhatsappCliente}

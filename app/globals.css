@@ -82,3 +82,51 @@ body {
 .scrollbar-thin {
   scrollbar-width: thin;
 }
+
+/*
+ * Turns a plain <table> into a stacked card list below the "md" breakpoint,
+ * and back into a normal table at "md" and up. Each <td> that should show a
+ * label on mobile needs a `data-label="..."` attribute; the label itself is
+ * rendered by ::before so the table markup stays the single source of truth
+ * for both layouts (no separate mobile JSX to keep in sync).
+ */
+@media (max-width: 767px) {
+  .responsive-table thead {
+    display: none;
+  }
+  .responsive-table,
+  .responsive-table tbody {
+    display: block;
+    width: 100%;
+  }
+  .responsive-table tr {
+    display: block;
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--color-surface);
+  }
+  .responsive-table tr:last-child {
+    margin-bottom: 0;
+  }
+  .responsive-table td {
+    display: block;
+    padding: 0.375rem 0 !important;
+    border: none !important;
+    text-align: left !important;
+  }
+  .responsive-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-ink-400);
+    margin-bottom: 0.125rem;
+  }
+  .responsive-table td:empty {
+    display: none;
+  }
+}

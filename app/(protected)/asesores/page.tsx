@@ -41,7 +41,7 @@ export default async function AsesoresPage() {
         <AddAdvisorPanel />
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
         <KpiCard label="Total asesores" icon={Users} status={loadError ? "error" : "ready"} value={total} />
         <KpiCard label="Activos" icon={UserCheck} status={loadError ? "error" : "ready"} value={activos} />
         <KpiCard label="Pausados" icon={PauseCircle} status={loadError ? "error" : "ready"} value={pausados} />

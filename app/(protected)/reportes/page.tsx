@@ -86,14 +86,14 @@ export default async function ReportesPage({
         <EmptyState title="Sin datos en el periodo seleccionado" />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <LeadsByDayChart data={chartByDay} />
             <LeadsByOriginChart data={chartByOrigin} />
           </div>
 
           <Card>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <div className="md:overflow-x-auto">
+              <table className="responsive-table w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                     <th className="px-5 py-3 font-medium">Asesor</th>
@@ -106,15 +106,15 @@ export default async function ReportesPage({
                 <tbody>
                   {byAdvisor.map((row) => (
                     <tr key={row.advisor} className="border-b border-ink-50 last:border-0 hover:bg-surface-muted">
-                      <td className="px-5 py-3 font-medium text-ink-900">{row.advisor}</td>
-                      <td className="px-5 py-3 text-ink-600">{row.total}</td>
-                      <td className="px-5 py-3">
+                      <td data-label="Asesor" className="px-5 py-3 font-medium text-ink-900">{row.advisor}</td>
+                      <td data-label="Leads recibidos" className="px-5 py-3 text-ink-600">{row.total}</td>
+                      <td data-label="Notificados" className="px-5 py-3">
                         <Badge tone="success">{row.enviadas}</Badge>
                       </td>
-                      <td className="px-5 py-3">
+                      <td data-label="Pendientes" className="px-5 py-3">
                         <Badge tone="warning">{row.pendientes}</Badge>
                       </td>
-                      <td className="px-5 py-3">
+                      <td data-label="Con error" className="px-5 py-3">
                         <Badge tone="danger">{row.error}</Badge>
                       </td>
                     </tr>

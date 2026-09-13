@@ -15,23 +15,23 @@ export function UserRow({ user }: { user: AuthorizedUser }) {
 
   return (
     <tr className="border-b border-ink-50 last:border-0">
-      <td className="px-5 py-3">
+      <td data-label="Usuario" className="px-5 py-3">
         <form action={action} className="flex flex-wrap items-center gap-2">
           <input
             name="nombre"
             defaultValue={user.nombre}
-            className="w-36 rounded-md border border-ink-200 px-2 py-1.5 text-sm"
+            className="w-full rounded-md border border-ink-200 px-2 py-1.5 text-sm sm:w-36"
           />
           <input
             name="correo"
             type="email"
             defaultValue={user.correo}
-            className="w-52 rounded-md border border-ink-200 px-2 py-1.5 text-sm"
+            className="w-full rounded-md border border-ink-200 px-2 py-1.5 text-sm sm:w-52"
           />
           <select
             name="rol"
             defaultValue={user.rol}
-            className="rounded-md border border-ink-200 px-2 py-1.5 text-sm"
+            className="w-full rounded-md border border-ink-200 px-2 py-1.5 text-sm sm:w-auto"
           >
             <option value="ADMIN">ADMIN</option>
             <option value="DIRECCION">DIRECCION</option>
@@ -44,12 +44,12 @@ export function UserRow({ user }: { user: AuthorizedUser }) {
           {state.error && <span className="text-xs text-rose-600">{state.error}</span>}
         </form>
       </td>
-      <td className="px-5 py-3">
+      <td data-label="Estado" className="px-5 py-3">
         <Badge tone={user.activo ? "success" : "neutral"}>
           {user.activo ? "Activo" : "Inactivo"}
         </Badge>
       </td>
-      <td className="px-5 py-3 text-right">
+      <td className="px-5 py-3 text-left md:text-right">
         <Button
           variant={user.activo ? "danger" : "primary"}
           size="sm"

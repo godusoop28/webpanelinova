@@ -21,9 +21,12 @@ export default async function ProtectedLayout({
       <Sidebar items={items} user={user} />
       <div className="flex min-w-0 flex-1 flex-col">
         {isDemoMode && (
-          <div className="fixed inset-x-0 top-0 z-20 bg-gold-500 px-4 py-1.5 text-center text-xs font-medium text-ink-950 lg:pl-64">
-            Modo demostración — Leads, Asesores y Usuarios muestran datos de ejemplo hasta
-            conectar Google Sheets.
+          <div className="fixed inset-x-0 top-0 z-20 bg-gold-500 px-4 py-1.5 pl-16 text-center text-[11px] font-medium leading-snug text-ink-950 sm:text-xs lg:pl-64">
+            <span className="sm:hidden">Modo demostración — datos de ejemplo</span>
+            <span className="hidden sm:inline">
+              Modo demostración — Leads, Asesores y Usuarios muestran datos de ejemplo hasta
+              conectar Google Sheets.
+            </span>
           </div>
         )}
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 pt-20 sm:px-6 lg:px-8 lg:pt-8">
