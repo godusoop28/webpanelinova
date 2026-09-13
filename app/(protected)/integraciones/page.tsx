@@ -14,11 +14,6 @@ const INTEGRATIONS = [
     description: "Leads, asesores, usuarios y eventos de Make.",
   },
   {
-    name: "EasyBroker",
-    vars: ["EASYBROKER_API_KEY"],
-    description: "Propiedades, contactos y solicitudes de contacto.",
-  },
-  {
     name: "Make (entrante)",
     vars: ["MAKE_WEBHOOK_SECRET"],
     description: "Recibe eventos de automatización en /api/integrations/make/events.",

@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Building2,
   LayoutDashboard,
   LineChart,
   LogOut,
@@ -22,7 +21,6 @@ import type { PanelSection, Role } from "@/lib/permissions";
 const ICONS: Record<PanelSection, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
   leads: Users,
-  propiedades: Building2,
   asesores: UserSquare2,
   reportes: LineChart,
   usuarios: Users,

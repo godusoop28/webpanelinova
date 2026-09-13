@@ -74,7 +74,7 @@ export default async function ConfiguracionPage() {
           </p>
           <p>
             <span className="font-medium text-ink-900">DIRECCION</span> — resumen, leads,
-            propiedades, asesores y reportes.
+            asesores y reportes.
           </p>
           <p>
             <span className="font-medium text-ink-900">CONSULTA</span> — resumen y reportes en

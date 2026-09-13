@@ -140,7 +140,7 @@ export function computeLeadMetrics(
     leadsPropiedad: inRange.filter((l) => norm(l.tipoInteres).includes("propiedad")).length,
     leadsExploracion: inRange.filter((l) => norm(l.tipoInteres).includes("explora")).length,
     asignacionesExclusivas: inRange.filter((l) => norm(l.tipoAsignacion).includes("exclus")).length,
-    asignacionesRuleta: inRange.filter((l) => norm(l.tipoAsignacion).includes("ruleta")).length,
+    asignacionesRuleta: inRange.filter((l) => !norm(l.tipoAsignacion).includes("exclus")).length,
     notificacionesPendientes: inRange.filter((l) => norm(l.estadoEnvioAsesor).includes("pendient")).length,
     notificacionesConError: inRange.filter((l) => norm(l.estadoEnvioAsesor).includes("error")).length,
   };

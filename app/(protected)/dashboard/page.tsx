@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  Building2,
   CheckCircle2,
   Compass,
   Dices,
@@ -12,7 +11,6 @@ import {
 } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getAdvisorRows, getLeadRows } from "@/lib/google-sheets";
-import { getContactMetrics, getPropertyMetrics } from "@/lib/easybroker";
 import {
   computeLeadMetrics,
   percentChange,
@@ -51,13 +49,10 @@ export default async function DashboardPage({
   );
   const previous = previousPeriod(range);
 
-  const [leadsResult, advisorsResult, contactMetricsResult, propertyMetricsResult] =
-    await Promise.all([
-      settle(getLeadRows()),
-      settle(getAdvisorRows()),
-      settle(getContactMetrics()),
-      settle(getPropertyMetrics()),
-    ]);
+  const [leadsResult, advisorsResult] = await Promise.all([
+    settle(getLeadRows()),
+    settle(getAdvisorRows()),
+  ]);
 
   const currentMetrics =
     leadsResult.status === "ready" ? computeLeadMetrics(leadsResult.value, range) : null;
@@ -108,7 +103,7 @@ export default async function DashboardPage({
         <div>
           <h1 className="text-xl font-semibold text-ink-900">Resumen ejecutivo</h1>
           <p className="text-sm text-ink-500">
-            Indicadores consolidados de EasyBroker, Google Sheets y Make.
+            Indicadores consolidados de Google Sheets y Make.
           </p>
         </div>
         <DateRangeFilter current={preset} />
@@ -154,32 +149,6 @@ export default async function DashboardPage({
           icon={Compass}
           status={leadStatus}
           value={currentMetrics?.leadsExploracion}
-        />
-        <KpiCard
-          label="Propiedades consultadas"
-          icon={Building2}
-          status={
-            contactMetricsResult.status === "error"
-              ? "error"
-              : contactMetricsResult.value.totalContactRequests === null
-                ? "empty"
-                : "ready"
-          }
-          value={contactMetricsResult.status === "ready" ? contactMetricsResult.value.totalContactRequests ?? undefined : undefined}
-          emptyMessage="EasyBroker no reporta este dato"
-        />
-        <KpiCard
-          label="Propiedades creadas"
-          icon={Building2}
-          status={
-            propertyMetricsResult.status === "error"
-              ? "error"
-              : propertyMetricsResult.value.totalProperties === null
-                ? "empty"
-                : "ready"
-          }
-          value={propertyMetricsResult.status === "ready" ? propertyMetricsResult.value.totalProperties ?? undefined : undefined}
-          emptyMessage="EasyBroker no reporta este dato"
         />
         <KpiCard
           label="Asesores activos"

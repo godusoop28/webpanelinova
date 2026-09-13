@@ -37,11 +37,6 @@ export const env = {
       return requireEnv("GOOGLE_SPREADSHEET_ID");
     },
   },
-  easybroker: {
-    get apiKey() {
-      return requireEnv("EASYBROKER_API_KEY");
-    },
-  },
   make: {
     get webhookSecret() {
       return requireEnv("MAKE_WEBHOOK_SECRET");
@@ -121,7 +116,6 @@ export function getMissingEnvVars(): string[] {
     "GOOGLE_CLIENT_EMAIL",
     "GOOGLE_PRIVATE_KEY",
     "GOOGLE_SPREADSHEET_ID",
-    "EASYBROKER_API_KEY",
     "MAKE_WEBHOOK_SECRET",
     "MAKE_SYNC_WEBHOOK_URL",
     "AUTH_SECRET",

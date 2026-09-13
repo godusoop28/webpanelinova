@@ -5,7 +5,6 @@ export type Role = "ADMIN" | "DIRECCION" | "CONSULTA";
 export type PanelSection =
   | "dashboard"
   | "leads"
-  | "propiedades"
   | "asesores"
   | "reportes"
   | "usuarios"
@@ -15,7 +14,6 @@ export type PanelSection =
 const SECTION_ACCESS: Record<PanelSection, Role[]> = {
   dashboard: ["ADMIN", "DIRECCION", "CONSULTA"],
   leads: ["ADMIN", "DIRECCION"],
-  propiedades: ["ADMIN", "DIRECCION"],
   asesores: ["ADMIN", "DIRECCION"],
   reportes: ["ADMIN", "DIRECCION", "CONSULTA"],
   usuarios: ["ADMIN"],
@@ -48,7 +46,6 @@ export function canEditAdvisors(role: Role | undefined): boolean {
 export const ALL_SECTIONS: { section: PanelSection; label: string; href: string }[] = [
   { section: "dashboard", label: "Resumen", href: "/dashboard" },
   { section: "leads", label: "Leads", href: "/leads" },
-  { section: "propiedades", label: "Propiedades", href: "/propiedades" },
   { section: "asesores", label: "Asesores", href: "/asesores" },
   { section: "reportes", label: "Reportes", href: "/reportes" },
   { section: "usuarios", label: "Usuarios", href: "/usuarios" },
