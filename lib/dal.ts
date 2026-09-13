@@ -28,9 +28,9 @@ const DEMO_SESSION_USER: SessionUser = {
  * requireSection) before touching Sheets/EasyBroker data — proxy.ts only
  * performs a fast, optimistic redirect and must never be relied on alone.
  *
- * When DEMO_MODE=true (a deliberate, temporary opt-in for showing the
- * panel to someone outside the team) this skips the login check entirely
- * and hands back a fixed ADMIN identity, so the demo needs no password.
+ * Demo mode is active by default (see isDemoModeActive in lib/env.ts); while
+ * it is, this skips the login check entirely and hands back a fixed ADMIN
+ * identity, so the demo needs no password.
  */
 export async function requireUser(): Promise<SessionUser> {
   if (isDemoModeActive()) {

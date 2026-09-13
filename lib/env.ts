@@ -75,15 +75,14 @@ export function hasGoogleSheetsCredentials(): boolean {
 }
 
 /**
- * Explicit, temporary opt-in for showing the panel to someone outside the
- * team (a client demo) with seeded data and without requiring the login
- * password. Unlike "Sheets isn't configured", this must never turn on by
- * accident, so it's a single dedicated flag instead of being inferred from
- * missing credentials. Set DEMO_MODE=true on the hosting provider for the
- * demo window and remove it (or set it to anything else) right after.
+ * Temporary opt-out for showing the panel to someone outside the team (a
+ * client demo) with seeded data and without requiring the login password.
+ * Defaults to ON: until told otherwise, the panel should show simulated
+ * data by default. Set DEMO_MODE=false on the hosting provider to turn the
+ * real login/Sheets data back on.
  */
 export function isDemoModeActive(): boolean {
-  return optionalEnv("DEMO_MODE") === "true";
+  return optionalEnv("DEMO_MODE") !== "false";
 }
 
 /** Whether the panel is currently rendering seeded data instead of real Sheets rows. */
