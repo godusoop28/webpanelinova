@@ -410,7 +410,15 @@ export async function processIncomingLead(
           message: error instanceof Error ? error.message : "Error desconocido",
         });
         if (advisor.easyBrokerEmail) {
-          await enqueueEasyBrokerAssign(companyId, lead.id, { contactId, advisorEmail: advisor.easyBrokerEmail, advisorId: advisor.id });
+          await enqueueEasyBrokerAssign(companyId, lead.id, {
+            contactId,
+            phone,
+            source: MANYCHAT_SOURCE,
+            propertyId: property?.public_id,
+            advisorEmail: advisor.easyBrokerEmail,
+            advisorId: advisor.id,
+            assignmentId: assignment.id,
+          });
         }
       }
     } else {
@@ -421,8 +429,18 @@ export async function processIncomingLead(
         advisorId: advisor.id,
         eventType: "EASYBROKER_CONTACT_NOT_FOUND",
         status: "warning",
-        message: "No se encontró el contact_request tras el polling; la asignación local se conserva para reintento manual.",
+        message: "EasyBroker no expuso el contact_request a tiempo; se reintentará en segundo plano en vez de perder la confirmación.",
       });
+      if (advisor.easyBrokerEmail) {
+        await enqueueEasyBrokerAssign(companyId, lead.id, {
+          phone,
+          source: MANYCHAT_SOURCE,
+          propertyId: property?.public_id,
+          advisorEmail: advisor.easyBrokerEmail,
+          advisorId: advisor.id,
+          assignmentId: assignment.id,
+        });
+      }
     }
   }
 

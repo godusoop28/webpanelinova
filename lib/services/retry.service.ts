@@ -7,7 +7,12 @@ import {
   markJobFailed,
 } from "@/lib/repositories/integration-job.repository";
 import { updateLead } from "@/lib/repositories/lead.repository";
-import { createContactRequest, assignContactToAdvisor } from "@/lib/services/easybroker.service";
+import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository";
+import {
+  createContactRequest,
+  assignContactToAdvisor,
+  findRecentContactRequest,
+} from "@/lib/services/easybroker.service";
 import { setCustomFields, sendFlow } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { nextBackoffRetryAt } from "@/lib/retry";
@@ -22,7 +27,23 @@ export type EasyBrokerCreatePayload = {
   source: string;
   propertyId?: string;
 };
-export type EasyBrokerAssignPayload = { contactId: string; advisorEmail: string; advisorId?: string };
+/**
+ * `contactId` is often not known yet: EasyBroker's contact_request record
+ * can take longer to become queryable than the webhook's own response
+ * budget allows (verified — the contact_request itself is always created
+ * successfully, GET /contact_requests just doesn't reflect it immediately
+ * every time). When absent, the job looks it up by phone/source/propertyId
+ * before assigning, same as the synchronous path does.
+ */
+export type EasyBrokerAssignPayload = {
+  contactId?: string;
+  phone: string;
+  source: string;
+  propertyId?: string;
+  advisorEmail: string;
+  advisorId?: string;
+  assignmentId?: string;
+};
 export type ManyChatFieldsPayload = { subscriberId: string; fields: { fieldId: number; value: string }[] };
 export type ManyChatFlowPayload = { subscriberId: string; flowNs: string };
 
@@ -53,7 +74,23 @@ async function runJob(job: IntegrationJob): Promise<void> {
     }
     case "EASYBROKER_ASSIGN": {
       const payload = job.payload as unknown as EasyBrokerAssignPayload;
-      await assignContactToAdvisor(payload.contactId, payload.advisorEmail);
+      let contactId = payload.contactId;
+      if (!contactId) {
+        const found = await findRecentContactRequest({
+          phone: payload.phone,
+          source: payload.source,
+          propertyId: payload.propertyId,
+        });
+        if (!found?.contact_id) {
+          throw new Error("El contacto todavía no aparece en EasyBroker; se reintentará.");
+        }
+        contactId = found.contact_id;
+        if (job.leadId) await updateLead(job.leadId, { easyBrokerContactId: contactId });
+      }
+      await assignContactToAdvisor(contactId, payload.advisorEmail);
+      if (payload.assignmentId) {
+        await updateAssignmentStatus(payload.assignmentId, { status: "CONFIRMED", easyBrokerConfirmed: true });
+      }
       return;
     }
     case "MANYCHAT_FIELDS": {
