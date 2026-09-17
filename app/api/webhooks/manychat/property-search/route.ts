@@ -3,13 +3,32 @@ import type { NextRequest } from "next/server";
 import { checkIntegrationSecret } from "@/lib/api-auth";
 import { PropertySearchWebhookSchema } from "@/lib/schemas";
 import { searchProperties } from "@/lib/services/property-search.service";
+import type { PropertySearchOption } from "@/lib/property-search-schema";
 
 /**
- * Fase 23: migration of "Buscar propiedades EasyBroker - búsqueda
- * profunda". Read-only against EasyBroker + OpenAI — never touches Sheets,
- * ManyChat, or the DB, so it's safe to enable independently of the lead
- * pipeline's shadow/live mode.
+ * Read-only against EasyBroker + OpenAI — never touches ManyChat or the DB,
+ * so it's safe to enable independently of the lead pipeline's shadow/live
+ * mode.
+ *
+ * Response shape is flat (opcion_1_id/opcion_1_titulo/opcion_1_url, ...)
+ * rather than an `opciones` array on purpose: it matches exactly what the
+ * ManyChat flow's External Request step already maps into
+ * Opcion_1_Titulo/Opcion_2_Titulo/etc. (same contract the old Make webhook
+ * used), so pointing ManyChat at this URL doesn't require touching its
+ * field mappings.
  */
+function flattenOptions(opciones: PropertySearchOption[]) {
+  const slots = [0, 1, 2] as const;
+  const flat: Record<string, string> = {};
+  for (const i of slots) {
+    const option = opciones[i];
+    flat[`opcion_${i + 1}_id`] = option?.id ?? "";
+    flat[`opcion_${i + 1}_titulo`] = option?.titulo ?? "";
+    flat[`opcion_${i + 1}_url`] = option?.url ?? "";
+  }
+  return flat;
+}
+
 export async function POST(request: NextRequest) {
   const authError = checkIntegrationSecret(request);
   if (authError) return authError;
@@ -18,24 +37,25 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ ok: false, error: { code: "INVALID_BODY", message: "Cuerpo JSON inválido." } }, { status: 400 });
+    return NextResponse.json({ resultado: "error", mensaje: "Cuerpo JSON inválido." }, { status: 400 });
   }
 
   const parsed = PropertySearchWebhookSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { ok: false, error: { code: "INVALID_BODY", message: "Payload inválido.", issues: parsed.error.issues } },
+      { resultado: "error", mensaje: "Payload inválido.", issues: parsed.error.issues },
       { status: 422 }
     );
   }
 
   try {
     const result = await searchProperties(parsed.data.busqueda_propiedad);
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ resultado: result.resultado, ...flattenOptions(result.opciones) });
   } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: { code: "SEARCH_FAILED", message: error instanceof Error ? error.message : "Error desconocido" } },
-      { status: 500 }
-    );
+    // Mirrors the old Make webhook: always 200 so ManyChat's flow doesn't
+    // hit a request-failure branch — the client sees "sin resultados"
+    // either way, and the real error is in the server logs / AuditLog.
+    console.error("[PROPERTY_SEARCH] búsqueda falló", error);
+    return NextResponse.json({ resultado: "sin_resultados", ...flattenOptions([]) });
   }
 }
