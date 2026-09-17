@@ -1,4 +1,12 @@
 import "server-only";
+/**
+ * LEGACY - source of truth only when DATA_SOURCE is unset or "sheets"
+ * (lib/env.ts). Postgres/Prisma is the new source of truth — see
+ * docs/MIGRATION_TO_DATABASE.md. Kept fully working and unmodified so
+ * DATA_SOURCE can still fall back to it, and so the one-time
+ * /api/admin/migration/import-* endpoints have something to read from.
+ * Remove once Sheets is fully retired (see that doc's cutover plan).
+ */
 import { google } from "googleapis";
 import { unstable_cache } from "next/cache";
 import { env, isServingDemoData, shouldUseDemoData } from "@/lib/env";

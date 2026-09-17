@@ -5,6 +5,7 @@ import { MakeEventPayloadSchema } from "@/lib/schemas";
 import { env } from "@/lib/env";
 
 /**
+ * LEGACY - remove after ManyChat migration (see docs/MIGRATION_TO_DATABASE.md).
  * Inbound webhook: Make calls this endpoint to log automation events into
  * the EventosMake sheet. Protected with a shared secret rather than a user
  * session, since the caller is a Make scenario, not a signed-in person.

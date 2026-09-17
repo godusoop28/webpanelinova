@@ -8,6 +8,7 @@ import {
   resumeAdvisor,
   toggleAdvisor,
   updateAdvisor,
+  getAdvisorRowsFresh,
 } from "@/lib/google-sheets";
 import {
   AdvisorInputSchema,
@@ -18,10 +19,35 @@ import {
 import { PAUSE_INDEFINITE } from "@/lib/advisors";
 import { mexicoCityTomorrowAt, mexicoCityWallTimeToUtc } from "@/lib/timezone";
 import { getRotationCandidates, selectWeightedAdvisor } from "@/lib/assignment";
+import { getDataSource, isDemoModeActive } from "@/lib/env";
+import { getDefaultCompanyId } from "@/lib/company";
+import {
+  createAdvisorFromInput,
+  updateAdvisorFromInput,
+  setAdvisorActiveState,
+  pauseAdvisorUntil,
+  resumeAdvisorNow,
+} from "@/lib/services/advisor.service";
 
 export interface AdvisorFormState {
   error?: string;
   success?: boolean;
+}
+
+/**
+ * Same precedence documented in lib/env.ts: demo mode always wins, and
+ * DATA_SOURCE otherwise defaults to the legacy Sheets path. Writes go
+ * through whichever source the reads are coming from — mixing them would
+ * silently desync the two.
+ */
+function usingDatabase(): boolean {
+  return !isDemoModeActive() && getDataSource() === "database";
+}
+
+/** Sheets writes are still keyed by row position; the UI only knows `id` now (Fase 64). */
+async function resolveSheetRowNumber(id: string): Promise<number | null> {
+  const advisors = await getAdvisorRowsFresh();
+  return advisors.find((advisor) => advisor.id === id)?.rowNumber ?? null;
 }
 
 function parseAdvisorFormData(formData: FormData): Record<string, unknown> {
@@ -57,7 +83,12 @@ export async function createAdvisorAction(
   }
 
   try {
-    await addAdvisor(parsed.data as AdvisorInput);
+    if (usingDatabase()) {
+      const companyId = await getDefaultCompanyId();
+      await createAdvisorFromInput(companyId, parsed.data as AdvisorInput);
+    } else {
+      await addAdvisor(parsed.data as AdvisorInput);
+    }
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -66,7 +97,6 @@ export async function createAdvisorAction(
 }
 
 export async function updateAdvisorAction(
-  rowNumber: number,
   id: string,
   currentPausadoHasta: string | null,
   _prevState: AdvisorFormState,
@@ -80,7 +110,13 @@ export async function updateAdvisorAction(
   }
 
   try {
-    await updateAdvisor(rowNumber, id, parsed.data as AdvisorInput, currentPausadoHasta);
+    if (usingDatabase()) {
+      await updateAdvisorFromInput(id, parsed.data as AdvisorInput);
+    } else {
+      const rowNumber = await resolveSheetRowNumber(id);
+      if (rowNumber === null) return { error: "Asesor no encontrado en la hoja." };
+      await updateAdvisor(rowNumber, id, parsed.data as AdvisorInput, currentPausadoHasta);
+    }
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -88,10 +124,16 @@ export async function updateAdvisorAction(
   return { success: true };
 }
 
-export async function toggleAdvisorAction(rowNumber: number, activo: boolean): Promise<void> {
+export async function toggleAdvisorAction(id: string, activo: boolean): Promise<void> {
   await requireRole("ADMIN", "DIRECCION");
   try {
-    await toggleAdvisor(rowNumber, activo);
+    if (usingDatabase()) {
+      await setAdvisorActiveState(id, activo);
+    } else {
+      const rowNumber = await resolveSheetRowNumber(id);
+      if (rowNumber === null) return;
+      await toggleAdvisor(rowNumber, activo);
+    }
   } catch {
     return;
   }
@@ -99,7 +141,7 @@ export async function toggleAdvisorAction(rowNumber: number, activo: boolean): P
 }
 
 export async function pauseAdvisorAction(
-  rowNumber: number,
+  id: string,
   _prevState: AdvisorFormState,
   formData: FormData
 ): Promise<AdvisorFormState> {
@@ -137,7 +179,13 @@ export async function pauseAdvisorAction(
   }
 
   try {
-    await pauseAdvisor(rowNumber, pausadoHasta);
+    if (usingDatabase()) {
+      await pauseAdvisorUntil(id, pausadoHasta === PAUSE_INDEFINITE ? "INDEFINITE" : new Date(pausadoHasta));
+    } else {
+      const rowNumber = await resolveSheetRowNumber(id);
+      if (rowNumber === null) return { error: "Asesor no encontrado en la hoja." };
+      await pauseAdvisor(rowNumber, pausadoHasta);
+    }
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -145,10 +193,16 @@ export async function pauseAdvisorAction(
   return { success: true };
 }
 
-export async function resumeAdvisorAction(rowNumber: number): Promise<void> {
+export async function resumeAdvisorAction(id: string): Promise<void> {
   await requireRole("ADMIN", "DIRECCION");
   try {
-    await resumeAdvisor(rowNumber);
+    if (usingDatabase()) {
+      await resumeAdvisorNow(id);
+    } else {
+      const rowNumber = await resolveSheetRowNumber(id);
+      if (rowNumber === null) return;
+      await resumeAdvisor(rowNumber);
+    }
   } catch {
     return;
   }

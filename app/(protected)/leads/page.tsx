@@ -1,11 +1,17 @@
+import Link from "next/link";
 import { MessageCircle } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getLeadRows, type LeadRow } from "@/lib/google-sheets";
+import { getDataSource, isDemoModeActive } from "@/lib/env";
+import { getDefaultCompanyId } from "@/lib/company";
+import { listLeadRows } from "@/lib/services/lead-view.service";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState } from "@/components/ui/state";
 import { TableSearch } from "@/components/table-search";
 import { normalizePhone } from "@/lib/metrics";
+
+const PAGE_SIZE = 50;
 
 function statusTone(status: string): "success" | "warning" | "danger" | "neutral" {
   const normalized = status.toLowerCase();
@@ -44,23 +50,36 @@ function matchesQuery(lead: LeadRow, query: string): boolean {
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; status?: string }>;
 }) {
   await requireSection("leads");
-  const { q } = await searchParams;
+  const { q, page: pageParam, status } = await searchParams;
+  const usingDatabase = !isDemoModeActive() && getDataSource() === "database";
+  const page = Math.max(1, Number(pageParam) || 1);
 
-  let leads: LeadRow[] = [];
+  let leads: (LeadRow & { id?: string })[] = [];
   let loadError: string | null = null;
+  let total = 0;
   try {
-    leads = await getLeadRows();
+    if (usingDatabase) {
+      const companyId = await getDefaultCompanyId();
+      const result = await listLeadRows({ companyId, search: q, status }, page, PAGE_SIZE);
+      leads = result.leads;
+      total = result.total;
+    } else {
+      leads = await getLeadRows();
+      total = leads.length;
+    }
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Error desconocido";
   }
 
-  const filtered = q ? leads.filter((lead) => matchesQuery(lead, q)) : leads;
+  // The Sheets path has no server-side search/pagination — filter/sort client-visible data here instead.
+  const filtered = !usingDatabase && q ? leads.filter((lead) => matchesQuery(lead, q)) : leads;
   const sorted = [...filtered].sort(
     (a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime()
   );
+  const totalPages = usingDatabase ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : 1;
 
   return (
     <div className="space-y-5">
@@ -107,13 +126,21 @@ export default async function LeadsPage({
               <tbody>
                 {sorted.map((lead) => (
                   <tr
-                    key={`${lead.rowNumber}-${lead.telefono}`}
+                    key={lead.id ?? `${lead.rowNumber}-${lead.telefono}`}
                     className="border-b border-ink-50 last:border-0 hover:bg-surface-muted"
                   >
                     <td data-label="Fecha" className="whitespace-nowrap px-5 py-3 text-ink-600">
                       {formatDate(lead.fechaHora)}
                     </td>
-                    <td data-label="Nombre" className="px-5 py-3 font-medium text-ink-900">{lead.nombre || "—"}</td>
+                    <td data-label="Nombre" className="px-5 py-3 font-medium text-ink-900">
+                      {lead.id ? (
+                        <Link href={`/leads/${lead.id}`} className="hover:text-gold-700 hover:underline">
+                          {lead.nombre || "—"}
+                        </Link>
+                      ) : (
+                        lead.nombre || "—"
+                      )}
+                    </td>
                     <td data-label="Interés" className="px-5 py-3 text-ink-600">{lead.tipoInteres || "—"}</td>
                     <td data-label="Origen" className="px-5 py-3 text-ink-600">{lead.origen || "—"}</td>
                     <td data-label="Asesor" className="px-5 py-3 text-ink-600">{lead.asesorAsignado || "Sin asignar"}</td>
@@ -145,6 +172,32 @@ export default async function LeadsPage({
           </div>
         )}
       </Card>
+
+      {usingDatabase && totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-ink-600">
+          <span>
+            Página {page} de {totalPages} ({total} leads)
+          </span>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link
+                href={`/leads?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { status } : {}), page: String(page - 1) }).toString()}`}
+                className="rounded-lg border border-ink-200 px-3 py-1.5 hover:bg-surface-muted"
+              >
+                Anterior
+              </Link>
+            )}
+            {page < totalPages && (
+              <Link
+                href={`/leads?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { status } : {}), page: String(page + 1) }).toString()}`}
+                className="rounded-lg border border-ink-200 px-3 py-1.5 hover:bg-surface-muted"
+              >
+                Siguiente
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

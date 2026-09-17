@@ -1,0 +1,57 @@
+import "server-only";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
+import { env, isDemoModeActive } from "@/lib/env";
+import type { Role } from "@/lib/permissions";
+
+/**
+ * Shared-secret gate for the new /api/webhooks/* endpoints — external
+ * systems (ManyChat) call these without a panel session, same pattern the
+ * legacy /api/integrations/make/* routes already use with
+ * MAKE_WEBHOOK_SECRET (Fase 56). Returns a ready-to-return NextResponse on
+ * failure, or null when the caller should proceed.
+ */
+export function checkIntegrationSecret(request: NextRequest): NextResponse | null {
+  const provided = request.headers.get("x-inova-secret");
+  let expected: string;
+  try {
+    expected = env.integration.secret;
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: { code: "SERVER_MISCONFIGURED", message: "INTEGRATION_SECRET no está configurado en el servidor." } },
+      { status: 500 }
+    );
+  }
+  if (!provided || provided !== expected) {
+    return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Secreto inválido." } }, { status: 401 });
+  }
+  return null;
+}
+
+/**
+ * Panel-session gate for /api/admin/* and /api/advisors* JSON endpoints
+ * (Fase 56). Mirrors lib/dal.ts's requireRole, but returns a result instead
+ * of redirect()ing — a redirect to /login is useless to a fetch() caller
+ * expecting JSON.
+ */
+export async function requireAdminApi(): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  return requireRoleApi("ADMIN");
+}
+
+export async function requireRoleApi(
+  ...roles: Role[]
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  if (isDemoModeActive()) return { ok: true };
+  const session = await auth();
+  if (!session?.user?.email) return { ok: false, status: 401, message: "No autenticado." };
+  const role = session.user.role as Role | undefined;
+  if (!role || !roles.includes(role)) {
+    return { ok: false, status: 403, message: `Se requiere alguno de estos roles: ${roles.join(", ")}.` };
+  }
+  return { ok: true };
+}
+
+export function unauthorizedResponse(result: { status: number; message: string }): NextResponse {
+  return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: result.message } }, { status: result.status });
+}

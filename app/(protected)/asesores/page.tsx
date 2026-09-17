@@ -1,6 +1,10 @@
 import { UserCheck, UserX, PauseCircle, Users } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getAdvisorRows, getLeadRows, type AdvisorRow as AdvisorRowData } from "@/lib/google-sheets";
+import { getDataSource, isDemoModeActive } from "@/lib/env";
+import { getDefaultCompanyId } from "@/lib/company";
+import { listAdvisorViews } from "@/lib/services/advisor.service";
+import { getAdvisorsDailyAssignmentCounts } from "@/lib/services/assignment.service";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { EmptyState, ErrorState } from "@/components/ui/state";
@@ -9,16 +13,32 @@ import { AdvisorRow } from "@/components/asesores/advisor-row";
 import { DistributionTest } from "@/components/asesores/distribution-test";
 import { buildTodayLeadCounts, countTodayLeadsForAdvisor, isPaused, type AdvisorLeadCounts } from "@/lib/advisors";
 
+async function loadAdvisorsFromDatabase(): Promise<{ advisors: AdvisorRowData[]; leadsHoyById: Map<string, number> }> {
+  const companyId = await getDefaultCompanyId();
+  const advisors = await listAdvisorViews(companyId);
+  const leadsHoyById = await getAdvisorsDailyAssignmentCounts(advisors.map((advisor) => advisor.id));
+  return { advisors, leadsHoyById };
+}
+
 export default async function AsesoresPage() {
   await requireSection("asesores");
 
+  const usingDatabase = !isDemoModeActive() && getDataSource() === "database";
+
   let advisors: AdvisorRowData[] = [];
   let todayCounts: AdvisorLeadCounts = { byId: new Map(), byWhatsapp: new Map(), byNombre: new Map() };
+  let leadsHoyById: Map<string, number> | null = null;
   let loadError: string | null = null;
   try {
-    const [advisorRows, leadRows] = await Promise.all([getAdvisorRows(), getLeadRows()]);
-    advisors = advisorRows;
-    todayCounts = buildTodayLeadCounts(leadRows, new Date());
+    if (usingDatabase) {
+      const result = await loadAdvisorsFromDatabase();
+      advisors = result.advisors;
+      leadsHoyById = result.leadsHoyById;
+    } else {
+      const [advisorRows, leadRows] = await Promise.all([getAdvisorRows(), getLeadRows()]);
+      advisors = advisorRows;
+      todayCounts = buildTodayLeadCounts(leadRows, new Date());
+    }
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Error desconocido";
   }
@@ -65,7 +85,10 @@ export default async function AsesoresPage() {
       {loadError ? (
         <Card>
           <div className="p-5">
-            <ErrorState title="No se pudo cargar Google Sheets" description={loadError} />
+            <ErrorState
+              title={usingDatabase ? "No se pudo cargar la base de datos" : "No se pudo cargar Google Sheets"}
+              description={loadError}
+            />
           </div>
         </Card>
       ) : advisors.length === 0 ? (
@@ -80,7 +103,7 @@ export default async function AsesoresPage() {
             <AdvisorRow
               key={advisor.id || advisor.rowNumber}
               advisor={advisor}
-              leadsHoy={countTodayLeadsForAdvisor(advisor, todayCounts)}
+              leadsHoy={leadsHoyById ? leadsHoyById.get(advisor.id) ?? 0 : countTodayLeadsForAdvisor(advisor, todayCounts)}
             />
           ))}
         </div>

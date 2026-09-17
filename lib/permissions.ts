@@ -9,6 +9,7 @@ export type PanelSection =
   | "reportes"
   | "usuarios"
   | "integraciones"
+  | "testing"
   | "configuracion";
 
 const SECTION_ACCESS: Record<PanelSection, Role[]> = {
@@ -18,6 +19,7 @@ const SECTION_ACCESS: Record<PanelSection, Role[]> = {
   reportes: ["ADMIN", "DIRECCION", "CONSULTA"],
   usuarios: ["ADMIN"],
   integraciones: ["ADMIN"],
+  testing: ["ADMIN"],
   configuracion: ["ADMIN"],
 };
 
@@ -50,5 +52,6 @@ export const ALL_SECTIONS: { section: PanelSection; label: string; href: string 
   { section: "reportes", label: "Reportes", href: "/reportes" },
   { section: "usuarios", label: "Usuarios", href: "/usuarios" },
   { section: "integraciones", label: "Integraciones", href: "/integraciones" },
+  { section: "testing", label: "Pruebas (shadow)", href: "/testing" },
   { section: "configuracion", label: "Configuración", href: "/configuracion" },
 ];

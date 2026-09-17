@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  FlaskConical,
   LayoutDashboard,
   LineChart,
   LogOut,
@@ -25,6 +26,7 @@ const ICONS: Record<PanelSection, typeof LayoutDashboard> = {
   reportes: LineChart,
   usuarios: Users,
   integraciones: Plug,
+  testing: FlaskConical,
   configuracion: Settings,
 };
 

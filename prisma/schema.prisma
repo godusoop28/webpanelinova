@@ -1,0 +1,314 @@
+// Century 21 Inova - Panel Administrativo
+// Modelo multiempresa: Century 21 Innova es la primera Company, pero ningún
+// modelo asume que es la única (ver docs/MIGRATION_TO_DATABASE.md).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Connection URL lives in prisma.config.ts (CLI) and lib/db.ts (runtime,
+// via the @prisma/adapter-neon driver adapter) — Prisma 7 no longer reads
+// `url` from this block. See docs/MIGRATION_TO_DATABASE.md.
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  DIRECCION
+  CONSULTA
+}
+
+enum LeadInterestType {
+  PROPERTY
+  EXPLORE
+  CAMPAIGN
+  TIMEOUT
+  NO_RESPONSE
+  OTHER
+}
+
+enum LeadStatus {
+  RECEIVED
+  PROCESSING
+  CREATED_IN_EASYBROKER
+  ASSIGNED
+  NOTIFIED
+  COMPLETED
+  FAILED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ASSIGNED
+  CONFIRMED
+  FAILED
+}
+
+enum AssignmentMethod {
+  DIRECT_PROPERTY_ADVISOR
+  WEIGHTED_ROTATION
+  CAMPAIGN_DIRECT
+  MANUAL
+  FALLBACK
+}
+
+enum IntegrationType {
+  EASYBROKER
+  MANYCHAT
+  OPENAI
+  GOOGLE_SHEETS
+  MAKE
+}
+
+// ---------------------------------------------------------------------------
+// Multiempresa
+// ---------------------------------------------------------------------------
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  advisors         Advisor[]
+  leads            Lead[]
+  assignmentRules  AssignmentRule[]
+  integrations     Integration[]
+  auditLogs        AuditLog[]
+
+  @@map("companies")
+}
+
+/**
+ * Modelo preparado a futuro. La autenticación real del panel sigue siendo
+ * AUTH_PASSWORD + hoja "Usuarios" (ver lib/auth.ts, lib/dal.ts) — este
+ * modelo NO sustituye ese mecanismo todavía, solo deja lista la forma para
+ * cuando el panel tenga cuentas individuales de verdad.
+ */
+model User {
+  id           String   @id @default(cuid())
+  companyId    String
+  name         String
+  email        String   @unique
+  passwordHash String?
+  role         UserRole @default(CONSULTA)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Asesores
+// ---------------------------------------------------------------------------
+
+model Advisor {
+  id                   String    @id @default(cuid())
+  companyId            String
+  name                 String
+  email                String?
+  phone                String
+  easyBrokerEmail      String?
+  easyBrokerAgentId    String?
+  manyChatSubscriberId String?
+  active               Boolean   @default(true)
+  weight               Int       @default(5)
+  dailyLimit           Int?
+  pausedUntil          DateTime?
+  /** Cache del conteo del día; la verdad se calcula desde LeadAssignment (ver lib/services/assignment.service.ts). */
+  leadsToday           Int       @default(0)
+  allowedProperty      Boolean   @default(true)
+  allowedExplore       Boolean   @default(true)
+  allowedCampaign      Boolean   @default(true)
+  allowedTimeout       Boolean   @default(true)
+  priority             Int?
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  company     Company          @relation(fields: [companyId], references: [id])
+  assignments LeadAssignment[]
+  leads       Lead[]           @relation("LeadAssignedAdvisor")
+  auditLogs   AuditLog[]
+
+  @@unique([companyId, easyBrokerEmail])
+  @@index([companyId])
+  @@index([active])
+  @@index([easyBrokerEmail])
+  @@map("advisors")
+}
+
+// ---------------------------------------------------------------------------
+// Leads
+// ---------------------------------------------------------------------------
+
+model Lead {
+  id        String           @id @default(cuid())
+  companyId String
+  name      String
+  phone     String
+
+  interestType LeadInterestType @default(OTHER)
+  /** Texto crudo enviado por el cliente (ID de propiedad, referencia de campaña, etc). */
+  propertyData String?
+  /** Campo de negocio: de dónde vino el lead (p. ej. "WhatsApp ManyChat"). */
+  origin       String?
+  /** Etiqueta de ruta usada por el motor de asignación (p. ej. "Vi una propiedad"). */
+  route        String?
+  status       LeadStatus       @default(RECEIVED)
+  /** Procedencia técnica del registro: manychat_webhook, make_legacy, import_sheets, testing_ui. */
+  source       String?
+
+  easyBrokerContactRequestId String?
+  easyBrokerContactId        String?
+  easyBrokerPropertyId       String?
+
+  manyChatSubscriberId String?
+
+  assignedAdvisorId String?
+  assignmentStatus  AssignmentStatus @default(PENDING)
+
+  /** Clave de idempotencia: la de ManyChat si viene, o un fingerprint determinístico. */
+  requestId String? @unique
+
+  rawPayload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company         Company          @relation(fields: [companyId], references: [id])
+  assignedAdvisor Advisor?         @relation("LeadAssignedAdvisor", fields: [assignedAdvisorId], references: [id])
+  assignments     LeadAssignment[]
+  auditLogs       AuditLog[]
+
+  @@index([phone])
+  @@index([createdAt])
+  @@index([status])
+  @@index([companyId])
+  @@index([assignedAdvisorId])
+  @@map("leads")
+}
+
+model LeadAssignment {
+  id     String @id @default(cuid())
+  leadId String
+  advisorId String
+
+  method             AssignmentMethod
+  weightAtAssignment Int
+  reason             String?
+  status             AssignmentStatus @default(PENDING)
+  easyBrokerConfirmed Boolean         @default(false)
+  manyChatNotified    Boolean         @default(false)
+  assignedAt          DateTime        @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lead    Lead    @relation(fields: [leadId], references: [id])
+  advisor Advisor @relation(fields: [advisorId], references: [id])
+
+  @@index([leadId])
+  @@index([advisorId])
+  @@index([assignedAt])
+  @@map("lead_assignments")
+}
+
+model AssignmentRule {
+  id        String  @id @default(cuid())
+  companyId String
+  name      String
+  active    Boolean @default(true)
+  route     String
+
+  minimumWeight     Int?
+  maximumDailyLeads Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@map("assignment_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Integraciones (configuración no sensible; los secretos siguen en ENV)
+// ---------------------------------------------------------------------------
+
+model Integration {
+  id        String          @id @default(cuid())
+  companyId String
+  type      IntegrationType
+  active    Boolean         @default(true)
+  /** Configuración NO sensible (IDs de flow, nombres, límites). Nunca secretos. */
+  config    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, type])
+  @@map("integrations")
+}
+
+// ---------------------------------------------------------------------------
+// Auditoría
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  companyId String?
+  leadId    String?
+  advisorId String?
+
+  eventType String
+  status    String
+  message   String?
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id])
+  lead    Lead?    @relation(fields: [leadId], references: [id])
+  advisor Advisor? @relation(fields: [advisorId], references: [id])
+
+  @@index([createdAt])
+  @@index([leadId])
+  @@map("audit_logs")
+}
+
+model WebhookEvent {
+  id         String  @id @default(cuid())
+  provider   String
+  externalId String?
+  eventType  String
+  payload    Json
+  status     String  @default("received")
+
+  processingAttempts Int       @default(0)
+  processedAt         DateTime?
+  lastError            String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([provider, externalId])
+  @@index([externalId])
+  @@index([createdAt])
+  @@map("webhook_events")
+}

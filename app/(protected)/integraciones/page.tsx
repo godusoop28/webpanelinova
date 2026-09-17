@@ -1,7 +1,8 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 import { requireRole } from "@/lib/dal";
 import { getMakeEvents } from "@/lib/google-sheets";
-import { getMissingEnvVars } from "@/lib/env";
+import { getMissingEnvVars, getIntegrationReadiness, getDataSource } from "@/lib/env";
+import { checkDatabaseConnection } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState } from "@/components/ui/state";
@@ -9,17 +10,17 @@ import { SyncButton } from "@/components/integraciones/sync-button";
 
 const INTEGRATIONS = [
   {
-    name: "Google Sheets",
+    name: "Google Sheets (LEGACY)",
     vars: ["GOOGLE_PROJECT_ID", "GOOGLE_CLIENT_EMAIL", "GOOGLE_PRIVATE_KEY", "GOOGLE_SPREADSHEET_ID"],
-    description: "Leads, asesores, usuarios y eventos de Make.",
+    description: "Fuente de datos original. Se conserva solo como legado/migración (ver docs/MIGRATION_TO_DATABASE.md).",
   },
   {
-    name: "Make (entrante)",
+    name: "Make (LEGACY, entrante)",
     vars: ["MAKE_WEBHOOK_SECRET"],
-    description: "Recibe eventos de automatización en /api/integrations/make/events.",
+    description: "Recibe eventos de automatización en /api/integrations/make/events. Retirar tras migrar ManyChat.",
   },
   {
-    name: "Make (saliente)",
+    name: "Make (LEGACY, saliente)",
     vars: ["MAKE_SYNC_WEBHOOK_URL"],
     description: "Botón de sincronización manual del panel.",
   },
@@ -46,6 +47,8 @@ export default async function IntegracionesPage() {
   await requireRole("ADMIN");
 
   const missing = getMissingEnvVars();
+  const readiness = getIntegrationReadiness();
+  const database = readiness.databaseConfigured ? await checkDatabaseConnection() : { ok: false as const };
 
   let events: Awaited<ReturnType<typeof getMakeEvents>> = [];
   let loadError: string | null = null;
@@ -57,17 +60,59 @@ export default async function IntegracionesPage() {
 
   const lastSync = events.find((event) => event.escenario === "Sincronización manual");
 
+  const NEW_INTEGRATIONS: { name: string; description: string; status: "connected" | "configured" | "missing" }[] = [
+    {
+      name: "Neon PostgreSQL",
+      description: `Nueva fuente principal de datos (DATA_SOURCE=${getDataSource()}).`,
+      status: !readiness.databaseConfigured ? "missing" : database.ok ? "connected" : "configured",
+    },
+    {
+      name: "EasyBroker",
+      description: "Propiedades y contact_requests — lectura y escritura del motor de asignación nuevo.",
+      status: readiness.easyBrokerConfigured ? "configured" : "missing",
+    },
+    {
+      name: "ManyChat",
+      description: "Notificación a asesores (setCustomFields/sendFlow) — deshabilitado hasta AUTOMATION_MODE=live.",
+      status: readiness.manyChatConfigured ? "configured" : "missing",
+    },
+    {
+      name: "OpenAI",
+      description: "Búsqueda profunda de propiedades (matching por IA).",
+      status: readiness.openAIConfigured ? "configured" : "missing",
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-ink-900">Integraciones</h1>
         <p className="text-sm text-ink-500">
-          Estado de las conexiones externas y control de la sincronización con Make.
+          Estado de las conexiones externas. AUTOMATION_MODE actual:{" "}
+          <span className="font-semibold text-ink-800">{readiness.automationMode}</span>.
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {INTEGRATIONS.map((integration) => {
+        {NEW_INTEGRATIONS.map((integration) => (
+          <Card key={integration.name} className="p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-ink-900">{integration.name}</h3>
+                <p className="mt-0.5 text-xs text-ink-500">{integration.description}</p>
+              </div>
+              <Badge tone={integration.status === "connected" ? "success" : integration.status === "configured" ? "gold" : "danger"}>
+                {integration.status === "connected" ? "Conectado" : integration.status === "configured" ? "Configurado" : "Falta configuración"}
+              </Badge>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-ink-500">Legado</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {INTEGRATIONS.map((integration) => {
           const missingVars = integration.vars.filter((v) => missing.includes(v));
           const configured = missingVars.length === 0;
           return (
@@ -99,7 +144,8 @@ export default async function IntegracionesPage() {
               )}
             </Card>
           );
-        })}
+          })}
+        </div>
       </div>
 
       <Card>

@@ -98,6 +98,28 @@ export const MakeEventPayloadSchema = z.object({
 
 export type MakeEventPayload = z.infer<typeof MakeEventPayloadSchema>;
 
+// ---------------------------------------------------------------------------
+// Webhooks nuevos (Fase 14/23) — nombres de campo compatibles con el
+// payload que ManyChat ya envía hoy a Make, para no tener que tocar el
+// flow de ManyChat todavía.
+// ---------------------------------------------------------------------------
+
+export const IncomingLeadWebhookSchema = z.object({
+  nombre: z.string().trim().min(1, "nombre es obligatorio."),
+  telefono_cliente: z.string().trim().min(1, "telefono_cliente es obligatorio."),
+  interes_cliente: z.string().trim().min(1, "interes_cliente es obligatorio."),
+  datos_propiedad: z.string().trim().optional().default(""),
+  origen: z.string().trim().optional().default(""),
+  subscriber_id: z.string().trim().optional(),
+  requestId: z.string().trim().optional(),
+});
+
+export type IncomingLeadWebhookPayload = z.infer<typeof IncomingLeadWebhookSchema>;
+
+export const PropertySearchWebhookSchema = z.object({
+  busqueda_propiedad: z.string().trim().min(1, "busqueda_propiedad es obligatoria."),
+});
+
 export const DateRangePresetSchema = z.enum([
   "today",
   "this_week",

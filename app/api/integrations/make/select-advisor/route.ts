@@ -8,6 +8,10 @@ import { env } from "@/lib/env";
 const SCENARIO_LABEL = "Selección de asesor (ruleta)";
 
 /**
+ * LEGACY - remove after ManyChat migration (see docs/MIGRATION_TO_DATABASE.md).
+ * The new pipeline (lib/services/lead.service.ts + lib/services/assignment.service.ts,
+ * on Postgres) is what /api/webhooks/manychat/lead uses instead.
+ *
  * Outbound endpoint Make will call to ask "which advisor gets this lead".
  * Only used for the rotation/comodín case — properties with an exclusive
  * advisor keep being resolved by EasyBroker, never by this endpoint. Same

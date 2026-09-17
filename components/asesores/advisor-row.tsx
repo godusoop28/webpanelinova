@@ -23,8 +23,8 @@ import {
 
 const pauseInitialState: AdvisorFormState = {};
 
-function PausePanel({ rowNumber, onDone }: { rowNumber: number; onDone: () => void }) {
-  const boundAction = pauseAdvisorAction.bind(null, rowNumber);
+function PausePanel({ id, onDone }: { id: string; onDone: () => void }) {
+  const boundAction = pauseAdvisorAction.bind(null, id);
   const [state, formAction, pending] = useActionState(boundAction, pauseInitialState);
 
   useEffect(() => {
@@ -72,7 +72,7 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
   const now = new Date();
   const paused = advisor.activo && computeIsPaused(advisor, now);
 
-  const boundUpdateAction = updateAdvisorAction.bind(null, advisor.rowNumber, advisor.id, advisor.pausadoHasta);
+  const boundUpdateAction = updateAdvisorAction.bind(null, advisor.id, advisor.pausadoHasta);
 
   if (editing) {
     return (
@@ -121,7 +121,7 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
                 variant="secondary"
                 size="sm"
                 loading={isResuming}
-                onClick={() => startResume(() => resumeAdvisorAction(advisor.rowNumber))}
+                onClick={() => startResume(() => resumeAdvisorAction(advisor.id))}
               >
                 <Play className="size-3.5" aria-hidden />
                 Reanudar
@@ -143,7 +143,7 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
                 );
                 if (!confirmed) return;
               }
-              startToggle(() => toggleAdvisorAction(advisor.rowNumber, !advisor.activo));
+              startToggle(() => toggleAdvisorAction(advisor.id, !advisor.activo));
             }}
           >
             <Power className="size-3.5" aria-hidden />
@@ -154,7 +154,7 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
 
       {pausing && (
         <div className="mt-3">
-          <PausePanel rowNumber={advisor.rowNumber} onDone={() => setPausing(false)} />
+          <PausePanel id={advisor.id} onDone={() => setPausing(false)} />
         </div>
       )}
 

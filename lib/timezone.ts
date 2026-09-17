@@ -87,6 +87,15 @@ export function mexicoCityTomorrowAt(hour: number, minute: number, reference: Da
   );
 }
 
+/** Start/end instants (UTC) of `reference`'s calendar day in Mexico City — used to scope "today" queries. */
+export function mexicoCityDayRange(reference: Date = new Date()): { start: Date; end: Date } {
+  const key = mexicoCityDateKey(reference);
+  const [year, month, day] = key.split("-").map(Number);
+  const start = mexicoCityWallTimeToUtc(year, month, day, 0, 0);
+  const nextDayStart = mexicoCityWallTimeToUtc(year, month, day + 1, 0, 0);
+  return { start, end: new Date(nextDayStart.getTime() - 1) };
+}
+
 /** Formats an instant as "04 sep, 09:00" in Mexico City time, for display. */
 export function formatMexicoCityDateTime(date: Date): string {
   if (Number.isNaN(date.getTime())) return "";

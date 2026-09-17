@@ -4,6 +4,7 @@
  * "server-only" here on purpose: this file has to be importable from
  * Client Components (forms, badges) as well as from server code.
  */
+import type { Advisor as DbAdvisor } from "@prisma/client";
 import type { AdvisorRow, LeadRow } from "@/lib/google-sheets";
 import { normalizePhone } from "@/lib/metrics";
 import { isSameMexicoCityDay } from "@/lib/timezone";
@@ -13,11 +14,20 @@ import { isSameMexicoCityDay } from "@/lib/timezone";
 // ---------------------------------------------------------------------------
 
 /**
- * Rutas conocidas por las que Make puede pedir un asesor. Centralizada aquí
- * para que agregar una ruta nueva sea un solo cambio (UI, validación y
- * motor de asignación la recogen automáticamente).
+ * Rutas conocidas por las que Make (o el motor nuevo) puede pedir un
+ * asesor. Centralizada aquí para que agregar una ruta nueva sea un solo
+ * cambio (UI, validación y motor de asignación la recogen
+ * automáticamente). "Timeout" no existía como ruta separada en la hoja de
+ * Sheets original (Make la trataba igual que "Explorar opciones"); se
+ * agrega para que el Advisor de Postgres (que sí trae allowedTimeout como
+ * campo propio, ver prisma/schema.prisma) pueda distinguirla.
  */
-export const LEAD_ROUTES = ["Vi una propiedad", "Explorar opciones", "Campaña propiedad"] as const;
+export const LEAD_ROUTES = [
+  "Vi una propiedad",
+  "Explorar opciones",
+  "Campaña propiedad",
+  "Timeout",
+] as const;
 
 export type AdvisorRoute = (typeof LEAD_ROUTES)[number];
 
@@ -155,4 +165,77 @@ export function countTodayLeadsForAdvisor(advisor: AdvisorRow, counts: AdvisorLe
 export function hasReachedDailyLimit(advisor: AdvisorRow, counts: AdvisorLeadCounts): boolean {
   if (advisor.limiteDiario === null) return false;
   return countTodayLeadsForAdvisor(advisor, counts) >= advisor.limiteDiario;
+}
+
+// ---------------------------------------------------------------------------
+// Adaptador Postgres <-> vista legada (Fase 64: la UI de /asesores sigue
+// consumiendo la forma AdvisorRow sin saber que ahora puede venir de
+// Prisma en vez de Sheets). Solo tipos de @prisma/client (import type, se
+// borra en compilación) — este archivo debe seguir siendo importable desde
+// Client Components.
+// ---------------------------------------------------------------------------
+
+type AllowedRouteFlags = Pick<DbAdvisor, "allowedProperty" | "allowedExplore" | "allowedCampaign" | "allowedTimeout">;
+
+const ROUTE_LABEL_TO_ALLOWED_FIELD: Record<(typeof LEAD_ROUTES)[number], keyof AllowedRouteFlags> = {
+  "Vi una propiedad": "allowedProperty",
+  "Explorar opciones": "allowedExplore",
+  "Campaña propiedad": "allowedCampaign",
+  Timeout: "allowedTimeout",
+};
+
+/** [] significa "todas las rutas" en la convención legada, igual que rutasPermitidas vacío en Sheets. */
+export function dbAdvisorAllowedRoutes(advisor: AllowedRouteFlags): string[] {
+  const allowed = LEAD_ROUTES.filter((route) => advisor[ROUTE_LABEL_TO_ALLOWED_FIELD[route]]);
+  return allowed.length === LEAD_ROUTES.length ? [] : allowed;
+}
+
+export function routeLabelsToAllowedFlags(routes: string[]): AllowedRouteFlags {
+  const set = new Set(routes.length === 0 ? LEAD_ROUTES : routes);
+  return {
+    allowedProperty: set.has("Vi una propiedad"),
+    allowedExplore: set.has("Explorar opciones"),
+    allowedCampaign: set.has("Campaña propiedad"),
+    allowedTimeout: set.has("Timeout"),
+  };
+}
+
+/**
+ * Advisor.pausedUntil en Postgres es un DateTime plano, sin un valor
+ * centinela para "indefinido" como la columna K de Sheets (PAUSE_INDEFINIDO).
+ * Se representa como una fecha muy lejana en vez de agregar nullable+enum
+ * extra al schema — año 2999 nunca se confunde con una pausa real.
+ */
+const DB_INDEFINITE_PAUSE_YEAR = 2999;
+
+export function dbIndefinitePauseDate(): Date {
+  return new Date(Date.UTC(DB_INDEFINITE_PAUSE_YEAR, 0, 1));
+}
+
+export function isDbIndefinitePause(pausedUntil: Date | null): boolean {
+  return pausedUntil !== null && pausedUntil.getUTCFullYear() >= DB_INDEFINITE_PAUSE_YEAR;
+}
+
+/** Adapta un Advisor de Postgres a la forma AdvisorRow que ya consumen advisor-row.tsx / advisor-form.tsx. */
+export function dbAdvisorToView(advisor: DbAdvisor): AdvisorRow {
+  return {
+    rowNumber: 0, // no aplica en modo DB; las acciones usan advisor.id (ver app/(protected)/asesores/actions.ts)
+    id: advisor.id,
+    nombre: advisor.name,
+    whatsapp: advisor.phone,
+    rol: "Asesor",
+    activo: advisor.active,
+    tipoAsignacion: "Rotación",
+    emailEasyBroker: advisor.easyBrokerEmail ?? "",
+    manyChatId: advisor.manyChatSubscriberId ?? "",
+    peso: advisor.weight,
+    rutasPermitidas: dbAdvisorAllowedRoutes(advisor),
+    pausadoHasta: advisor.pausedUntil
+      ? isDbIndefinitePause(advisor.pausedUntil)
+        ? PAUSE_INDEFINITE
+        : advisor.pausedUntil.toISOString()
+      : null,
+    limiteDiario: advisor.dailyLimit,
+    observaciones: advisor.notes ?? "",
+  };
 }
