@@ -321,12 +321,19 @@ export async function processIncomingLead(
   }
 
   // --- live mode from here on: real EasyBroker + ManyChat calls ---
-  let contactRequestId: string | null = null;
+  // EasyBroker's POST /contact_requests only ever responds with
+  // {"status":"successful"} — verified against the real API, it never
+  // returns an id. The contact has to be found afterward via GET
+  // /contact_requests matched by phone+source+property_id, same as the
+  // original Make scenario did — this must NOT be gated on an id that
+  // never arrives, or the advisor never gets confirmed in EasyBroker.
+  let contactRequestCreated = false;
+  const contactRequestId: string | null = null;
   let contactId: string | null = null;
   let confirmed = false;
 
   try {
-    const contactRequest = await createContactRequest({
+    await createContactRequest({
       name: input.nombre,
       phone,
       message: property
@@ -335,16 +342,16 @@ export async function processIncomingLead(
       source: MANYCHAT_SOURCE,
       propertyId: property?.public_id,
     });
-    contactRequestId = contactRequest.id ?? null;
+    contactRequestCreated = true;
     actions.push("created_easybroker_contact");
-    await updateLead(lead.id, { easyBrokerContactRequestId: contactRequestId, status: "CREATED_IN_EASYBROKER" });
+    await updateLead(lead.id, { status: "CREATED_IN_EASYBROKER" });
     await logAuditEvent({
       companyId,
       leadId: lead.id,
       advisorId: advisor.id,
       eventType: "EASYBROKER_CONTACT_REQUEST_CREATED",
       status: "ok",
-      message: `contact_request ${contactRequestId ?? "(sin id)"} creado en EasyBroker.`,
+      message: "contact_request creado en EasyBroker.",
     });
   } catch (error) {
     actions.push("easybroker_contact_failed");
@@ -367,10 +374,11 @@ export async function processIncomingLead(
     });
   }
 
-  if (contactRequestId) {
+  if (contactRequestCreated) {
     const found = await findRecentContactRequest({ phone, source: MANYCHAT_SOURCE, propertyId: property?.public_id });
     if (found?.contact_id) {
       contactId = found.contact_id;
+      await updateLead(lead.id, { easyBrokerContactId: contactId });
       await logAuditEvent({
         companyId,
         leadId: lead.id,
