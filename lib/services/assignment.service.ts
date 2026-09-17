@@ -7,6 +7,7 @@ import {
   incrementAdvisorLeadsTodayCache,
   lockEligibleAdvisorsForUpdate,
 } from "@/lib/repositories/assignment.repository";
+import { findEligibleAdvisorsForRoute } from "@/lib/repositories/advisor.repository";
 import type { AssignmentRoute } from "@/lib/assignment-engine";
 import { pickWeightedLeastAssigned } from "@/lib/assignment-engine";
 import { mexicoCityDayRange } from "@/lib/timezone";
@@ -128,4 +129,19 @@ export async function getAdvisorsDailyAssignmentCounts(
     _count: { _all: true },
   });
   return new Map(rows.map((row) => [row.advisorId, row._count._all]));
+}
+
+/**
+ * Read-only candidate list + today's counts for a route — the "probar
+ * distribución" panel runs pickWeightedLeastAssigned against this in
+ * memory, many times, without writing anything or holding any lock.
+ */
+export async function getRotationCandidatesForSimulation(
+  companyId: string,
+  route: AssignmentRoute,
+  now: Date = new Date()
+): Promise<{ candidates: Advisor[]; todayCounts: Map<string, number> }> {
+  const candidates = await findEligibleAdvisorsForRoute(companyId, route, now);
+  const todayCounts = await getAdvisorsDailyAssignmentCounts(candidates.map((advisor) => advisor.id), now);
+  return { candidates, todayCounts };
 }

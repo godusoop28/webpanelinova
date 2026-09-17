@@ -57,3 +57,19 @@ export async function pollUntil<T>(fn: () => Promise<T | null | undefined>, opti
   }
   return null;
 }
+
+/**
+ * Long-horizon backoff schedule for lib/services/retry.service.ts's
+ * integration_jobs (Fase 20: 1min, 5min, 15min, 1h, then give up). Distinct
+ * from backoffDelay above, which is for immediate in-request retries —
+ * this one is for a job picked up again later by the cron endpoint.
+ *
+ * `attempts` is the 1-based count of failures so far (the caller increments
+ * before calling this), so attempt 1 maps to scheduleMinutes[0] — the first
+ * tier — not scheduleMinutes[1]. Getting this off by one silently skips the
+ * fastest retry tier and gives up one attempt early.
+ */
+export function nextBackoffRetryAt(attempts: number, scheduleMinutes: number[], now: Date = new Date()): Date | null {
+  if (attempts > scheduleMinutes.length || attempts < 1) return null;
+  return new Date(now.getTime() + scheduleMinutes[attempts - 1] * 60 * 1000);
+}

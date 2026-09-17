@@ -10,8 +10,6 @@ import {
   UserSquare2,
 } from "lucide-react";
 import { requireSection } from "@/lib/dal";
-import { getAdvisorRows, getLeadRows } from "@/lib/google-sheets";
-import { getDataSource, isDemoModeActive } from "@/lib/env";
 import { getDefaultCompanyId } from "@/lib/company";
 import { listAdvisorViews } from "@/lib/services/advisor.service";
 import { listLeadMetricsRows } from "@/lib/services/lead-view.service";
@@ -52,21 +50,15 @@ export default async function DashboardPage({
     params.from && params.to ? { from: params.from, to: params.to } : undefined
   );
   const previous = previousPeriod(range);
-  const usingDatabase = !isDemoModeActive() && getDataSource() === "database";
 
-  // The metrics/rango window needs to cover both the current and the
-  // comparison period in one fetch for the DB path (Sheets always reads
-  // everything, so it doesn't need this).
+  // The metrics window needs to cover both the current and the comparison period in one fetch.
   const widestFrom = previous.from < range.from ? previous.from : range.from;
   const widestTo = previous.to > range.to ? previous.to : range.to;
+  const companyId = await getDefaultCompanyId();
 
   const [leadsResult, advisorsResult] = await Promise.all([
-    settle(
-      usingDatabase
-        ? getDefaultCompanyId().then((companyId) => listLeadMetricsRows(companyId, widestFrom, widestTo))
-        : getLeadRows()
-    ),
-    settle(usingDatabase ? getDefaultCompanyId().then((companyId) => listAdvisorViews(companyId)) : getAdvisorRows()),
+    settle(listLeadMetricsRows(companyId, widestFrom, widestTo)),
+    settle(listAdvisorViews(companyId)),
   ]);
 
   const currentMetrics =
@@ -117,9 +109,7 @@ export default async function DashboardPage({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-ink-900">Resumen ejecutivo</h1>
-          <p className="text-sm text-ink-500">
-            {usingDatabase ? "Indicadores consolidados desde Postgres." : "Indicadores consolidados de Google Sheets y Make."}
-          </p>
+          <p className="text-sm text-ink-500">Indicadores consolidados del periodo seleccionado.</p>
         </div>
         <DateRangeFilter current={preset} />
       </div>

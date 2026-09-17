@@ -1,17 +1,19 @@
 import { requireRole } from "@/lib/dal";
-import { getAuthorizedUsers } from "@/lib/google-sheets";
+import { getDefaultCompanyId } from "@/lib/company";
+import { listUsers } from "@/lib/services/user.service";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState } from "@/components/ui/state";
 import { NewUserForm } from "@/components/usuarios/new-user-form";
 import { UserRow } from "@/components/usuarios/user-row";
 
 export default async function UsuariosPage() {
-  await requireRole("ADMIN");
+  const currentUser = await requireRole("ADMIN");
 
-  let users: Awaited<ReturnType<typeof getAuthorizedUsers>> = [];
+  let users: Awaited<ReturnType<typeof listUsers>> = [];
   let loadError: string | null = null;
   try {
-    users = await getAuthorizedUsers();
+    const companyId = await getDefaultCompanyId();
+    users = await listUsers(companyId);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Error desconocido";
   }
@@ -20,10 +22,7 @@ export default async function UsuariosPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-ink-900">Usuarios</h1>
-        <p className="text-sm text-ink-500">
-          Controla quién puede iniciar sesión en el panel y con qué rol, directamente
-          sobre la pestaña Usuarios de Google Sheets.
-        </p>
+        <p className="text-sm text-ink-500">Controla quién puede iniciar sesión en el panel y con qué rol.</p>
       </div>
 
       <Card className="p-5">
@@ -34,7 +33,7 @@ export default async function UsuariosPage() {
       <Card>
         {loadError ? (
           <div className="p-5">
-            <ErrorState title="No se pudo cargar Google Sheets" description={loadError} />
+            <ErrorState title="No se pudieron cargar los usuarios" description={loadError} />
           </div>
         ) : users.length === 0 ? (
           <div className="p-5">
@@ -52,7 +51,7 @@ export default async function UsuariosPage() {
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <UserRow key={user.correo || user.rowNumber} user={user} />
+                  <UserRow key={user.id} user={user} isSelf={user.id === currentUser.id} />
                 ))}
               </tbody>
             </table>

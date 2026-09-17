@@ -52,6 +52,6 @@ export const ALL_SECTIONS: { section: PanelSection; label: string; href: string 
   { section: "reportes", label: "Reportes", href: "/reportes" },
   { section: "usuarios", label: "Usuarios", href: "/usuarios" },
   { section: "integraciones", label: "Integraciones", href: "/integraciones" },
-  { section: "testing", label: "Pruebas (shadow)", href: "/testing" },
+  { section: "testing", label: "Diagnóstico interno", href: "/testing" },
   { section: "configuracion", label: "Configuración", href: "/configuracion" },
 ];

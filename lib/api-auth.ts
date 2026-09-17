@@ -2,15 +2,13 @@ import "server-only";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { env, isDemoModeActive } from "@/lib/env";
+import { env } from "@/lib/env";
 import type { Role } from "@/lib/permissions";
 
 /**
- * Shared-secret gate for the new /api/webhooks/* endpoints — external
- * systems (ManyChat) call these without a panel session, same pattern the
- * legacy /api/integrations/make/* routes already use with
- * MAKE_WEBHOOK_SECRET (Fase 56). Returns a ready-to-return NextResponse on
- * failure, or null when the caller should proceed.
+ * Shared-secret gate for /api/webhooks/* — external systems (ManyChat)
+ * call these without a panel session. Returns a ready-to-return
+ * NextResponse on failure, or null when the caller should proceed.
  */
 export function checkIntegrationSecret(request: NextRequest): NextResponse | null {
   const provided = request.headers.get("x-inova-secret");
@@ -42,7 +40,6 @@ export async function requireAdminApi(): Promise<{ ok: true } | { ok: false; sta
 export async function requireRoleApi(
   ...roles: Role[]
 ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
-  if (isDemoModeActive()) return { ok: true };
   const session = await auth();
   if (!session?.user?.email) return { ok: false, status: 401, message: "No autenticado." };
   const role = session.user.role as Role | undefined;

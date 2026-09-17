@@ -1,25 +1,15 @@
 "use server";
 
-import { revalidateTag } from "next/cache";
+import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/dal";
-import {
-  addAdvisor,
-  pauseAdvisor,
-  resumeAdvisor,
-  toggleAdvisor,
-  updateAdvisor,
-  getAdvisorRowsFresh,
-} from "@/lib/google-sheets";
 import {
   AdvisorInputSchema,
   PauseAdvisorInputSchema,
   SimulateDistributionInputSchema,
   type AdvisorInput,
 } from "@/lib/schemas";
-import { PAUSE_INDEFINITE } from "@/lib/advisors";
+import { ROUTE_LABEL_TO_CODE } from "@/lib/advisors";
 import { mexicoCityTomorrowAt, mexicoCityWallTimeToUtc } from "@/lib/timezone";
-import { getRotationCandidates, selectWeightedAdvisor } from "@/lib/assignment";
-import { getDataSource, isDemoModeActive } from "@/lib/env";
 import { getDefaultCompanyId } from "@/lib/company";
 import {
   createAdvisorFromInput,
@@ -28,26 +18,12 @@ import {
   pauseAdvisorUntil,
   resumeAdvisorNow,
 } from "@/lib/services/advisor.service";
+import { getRotationCandidatesForSimulation } from "@/lib/services/assignment.service";
+import { pickWeightedLeastAssigned } from "@/lib/assignment-engine";
 
 export interface AdvisorFormState {
   error?: string;
   success?: boolean;
-}
-
-/**
- * Same precedence documented in lib/env.ts: demo mode always wins, and
- * DATA_SOURCE otherwise defaults to the legacy Sheets path. Writes go
- * through whichever source the reads are coming from — mixing them would
- * silently desync the two.
- */
-function usingDatabase(): boolean {
-  return !isDemoModeActive() && getDataSource() === "database";
-}
-
-/** Sheets writes are still keyed by row position; the UI only knows `id` now (Fase 64). */
-async function resolveSheetRowNumber(id: string): Promise<number | null> {
-  const advisors = await getAdvisorRowsFresh();
-  return advisors.find((advisor) => advisor.id === id)?.rowNumber ?? null;
 }
 
 function parseAdvisorFormData(formData: FormData): Record<string, unknown> {
@@ -55,8 +31,6 @@ function parseAdvisorFormData(formData: FormData): Record<string, unknown> {
   return {
     nombre: formData.get("nombre"),
     whatsapp: formData.get("whatsapp"),
-    rol: formData.get("rol"),
-    tipoAsignacion: formData.get("tipoAsignacion"),
     emailEasyBroker: formData.get("emailEasyBroker") ?? "",
     manyChatId: formData.get("manyChatId") ?? "",
     activo: formData.get("activo") === "on",
@@ -68,7 +42,7 @@ function parseAdvisorFormData(formData: FormData): Record<string, unknown> {
 }
 
 function revalidateAdvisors() {
-  revalidateTag("advisors", { expire: 0 });
+  revalidatePath("/asesores");
 }
 
 export async function createAdvisorAction(
@@ -83,12 +57,8 @@ export async function createAdvisorAction(
   }
 
   try {
-    if (usingDatabase()) {
-      const companyId = await getDefaultCompanyId();
-      await createAdvisorFromInput(companyId, parsed.data as AdvisorInput);
-    } else {
-      await addAdvisor(parsed.data as AdvisorInput);
-    }
+    const companyId = await getDefaultCompanyId();
+    await createAdvisorFromInput(companyId, parsed.data as AdvisorInput);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -98,7 +68,7 @@ export async function createAdvisorAction(
 
 export async function updateAdvisorAction(
   id: string,
-  currentPausadoHasta: string | null,
+  _currentPausadoHasta: string | null,
   _prevState: AdvisorFormState,
   formData: FormData
 ): Promise<AdvisorFormState> {
@@ -110,13 +80,7 @@ export async function updateAdvisorAction(
   }
 
   try {
-    if (usingDatabase()) {
-      await updateAdvisorFromInput(id, parsed.data as AdvisorInput);
-    } else {
-      const rowNumber = await resolveSheetRowNumber(id);
-      if (rowNumber === null) return { error: "Asesor no encontrado en la hoja." };
-      await updateAdvisor(rowNumber, id, parsed.data as AdvisorInput, currentPausadoHasta);
-    }
+    await updateAdvisorFromInput(id, parsed.data as AdvisorInput);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -127,13 +91,7 @@ export async function updateAdvisorAction(
 export async function toggleAdvisorAction(id: string, activo: boolean): Promise<void> {
   await requireRole("ADMIN", "DIRECCION");
   try {
-    if (usingDatabase()) {
-      await setAdvisorActiveState(id, activo);
-    } else {
-      const rowNumber = await resolveSheetRowNumber(id);
-      if (rowNumber === null) return;
-      await toggleAdvisor(rowNumber, activo);
-    }
+    await setAdvisorActiveState(id, activo);
   } catch {
     return;
   }
@@ -155,16 +113,16 @@ export async function pauseAdvisorAction(
     return { error: parsed.error.issues[0]?.message ?? "Datos de pausa inválidos." };
   }
 
-  let pausadoHasta: string;
+  let until: Date | "INDEFINITE";
   switch (parsed.data.mode) {
     case "1h":
-      pausadoHasta = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      until = new Date(Date.now() + 60 * 60 * 1000);
       break;
     case "tomorrow_9am":
-      pausadoHasta = mexicoCityTomorrowAt(9, 0).toISOString();
+      until = mexicoCityTomorrowAt(9, 0);
       break;
     case "indefinite":
-      pausadoHasta = PAUSE_INDEFINITE;
+      until = "INDEFINITE";
       break;
     case "custom": {
       const [datePart, timePart] = parsed.data.customDateTime.split("T");
@@ -173,19 +131,13 @@ export async function pauseAdvisorAction(
       if (!year || !month || !day || Number.isNaN(hour) || Number.isNaN(minute)) {
         return { error: "Fecha y hora de pausa inválidas." };
       }
-      pausadoHasta = mexicoCityWallTimeToUtc(year, month, day, hour, minute).toISOString();
+      until = mexicoCityWallTimeToUtc(year, month, day, hour, minute);
       break;
     }
   }
 
   try {
-    if (usingDatabase()) {
-      await pauseAdvisorUntil(id, pausadoHasta === PAUSE_INDEFINITE ? "INDEFINITE" : new Date(pausadoHasta));
-    } else {
-      const rowNumber = await resolveSheetRowNumber(id);
-      if (rowNumber === null) return { error: "Asesor no encontrado en la hoja." };
-      await pauseAdvisor(rowNumber, pausadoHasta);
-    }
+    await pauseAdvisorUntil(id, until);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -196,13 +148,7 @@ export async function pauseAdvisorAction(
 export async function resumeAdvisorAction(id: string): Promise<void> {
   await requireRole("ADMIN", "DIRECCION");
   try {
-    if (usingDatabase()) {
-      await resumeAdvisorNow(id);
-    } else {
-      const rowNumber = await resolveSheetRowNumber(id);
-      if (rowNumber === null) return;
-      await resumeAdvisor(rowNumber);
-    }
+    await resumeAdvisorNow(id);
   } catch {
     return;
   }
@@ -234,9 +180,14 @@ export async function simulateDistributionAction(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
 
-  let candidates: Awaited<ReturnType<typeof getRotationCandidates>>;
+  let candidates: Awaited<ReturnType<typeof getRotationCandidatesForSimulation>>["candidates"];
+  let todayCounts: Map<string, number>;
   try {
-    candidates = await getRotationCandidates(parsed.data.route);
+    const companyId = await getDefaultCompanyId();
+    const routeCode = ROUTE_LABEL_TO_CODE[parsed.data.route];
+    const result = await getRotationCandidatesForSimulation(companyId, routeCode);
+    candidates = result.candidates;
+    todayCounts = result.todayCounts;
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -245,13 +196,17 @@ export async function simulateDistributionAction(
   }
 
   const counts = new Map<string, number>();
+  const simulatedCounts = new Map(todayCounts);
   for (let i = 0; i < parsed.data.iterations; i++) {
-    const picked = selectWeightedAdvisor(candidates);
-    if (picked) counts.set(picked.id, (counts.get(picked.id) ?? 0) + 1);
+    const picked = pickWeightedLeastAssigned(candidates, simulatedCounts);
+    if (picked) {
+      counts.set(picked.id, (counts.get(picked.id) ?? 0) + 1);
+      simulatedCounts.set(picked.id, (simulatedCounts.get(picked.id) ?? 0) + 1);
+    }
   }
 
   const results = candidates
-    .map((advisor) => ({ id: advisor.id, nombre: advisor.nombre, count: counts.get(advisor.id) ?? 0 }))
+    .map((advisor) => ({ id: advisor.id, nombre: advisor.name, count: counts.get(advisor.id) ?? 0 }))
     .sort((a, b) => b.count - a.count);
 
   return { results, totalCandidates: candidates.length };

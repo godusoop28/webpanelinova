@@ -50,7 +50,7 @@ export function LeadSimulator() {
         <div className="sm:col-span-2">
           <Button type="submit" loading={pending}>
             <FlaskConical className="size-4" aria-hidden />
-            Simular lead (shadow)
+            Simular lead
           </Button>
         </div>
       </form>

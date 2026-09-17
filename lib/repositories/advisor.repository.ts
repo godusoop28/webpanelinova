@@ -1,6 +1,14 @@
 import "server-only";
 import type { Advisor, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import type { AssignmentRoute } from "@/lib/assignment-engine";
+
+const ROUTE_FIELD: Record<AssignmentRoute, keyof Pick<Advisor, "allowedProperty" | "allowedExplore" | "allowedCampaign" | "allowedTimeout">> = {
+  PROPERTY: "allowedProperty",
+  EXPLORE: "allowedExplore",
+  CAMPAIGN: "allowedCampaign",
+  TIMEOUT: "allowedTimeout",
+};
 
 export interface AdvisorUpsertInput {
   name: string;
@@ -55,20 +63,23 @@ export function setAdvisorPausedUntil(id: string, pausedUntil: Date | null): Pro
 }
 
 /**
- * Upsert keyed on (companyId, easyBrokerEmail) — the migration endpoint's
- * primary dedup key (Fase 6). Advisors without an EasyBroker email can't go
- * through this path; callers fall back to a secondary key themselves.
+ * Same eligibility rule as lockEligibleAdvisorsForUpdate, without the
+ * FOR UPDATE lock — for reads that only display/simulate and never write
+ * (the "probar distribución" panel), so they don't hold row locks.
  */
-export async function upsertAdvisorByEasyBrokerEmail(
+export function findEligibleAdvisorsForRoute(
   companyId: string,
-  easyBrokerEmail: string,
-  data: AdvisorUpsertInput
-): Promise<{ advisor: Advisor; created: boolean }> {
-  const existing = await findAdvisorByEasyBrokerEmail(companyId, easyBrokerEmail);
-  if (existing) {
-    const advisor = await prisma.advisor.update({ where: { id: existing.id }, data });
-    return { advisor, created: false };
-  }
-  const advisor = await createAdvisor(companyId, data);
-  return { advisor, created: true };
+  route: AssignmentRoute,
+  now: Date
+): Promise<Advisor[]> {
+  return prisma.advisor.findMany({
+    where: {
+      companyId,
+      active: true,
+      weight: { gt: 0 },
+      [ROUTE_FIELD[route]]: true,
+      OR: [{ pausedUntil: null }, { pausedUntil: { lte: now } }],
+    },
+    orderBy: { id: "asc" },
+  });
 }

@@ -24,11 +24,24 @@ export type AuditEventType =
   | "LEAD_COMPLETED"
   | "LEAD_FAILED"
   | "RETRY_SCHEDULED"
-  | "SHADOW_ACTION_SKIPPED"
+  | "AUTOMATION_SIMULATED"
   | "WEBHOOK_RECEIVED"
   | "WEBHOOK_DUPLICATE"
   | "MIGRATION_ADVISORS_IMPORTED"
-  | "MIGRATION_LEADS_IMPORTED";
+  | "MIGRATION_LEADS_IMPORTED"
+  | "USER_CREATED"
+  | "USER_UPDATED"
+  | "USER_PASSWORD_RESET"
+  | "USER_DELETED"
+  | "ADVISOR_CREATED"
+  | "ADVISOR_UPDATED"
+  | "ADVISOR_PAUSED"
+  | "ADVISOR_RESUMED"
+  | "LEAD_REASSIGNED"
+  | "LEAD_STATUS_CHANGED"
+  | "LEAD_RETRY_REQUESTED"
+  | "INTEGRATION_JOB_RETRIED"
+  | "INTEGRATION_JOB_FAILED";
 
 export interface AuditEventInput {
   companyId?: string;
@@ -42,9 +55,17 @@ export interface AuditEventInput {
 
 /**
  * Logging must never mask the real outcome of whatever it's auditing — a
- * failed audit write is logged to the console and swallowed, same pattern
- * the legacy appendMakeEvent callers already used (lib/google-sheets.ts).
+ * failed audit write is logged to the console and swallowed rather than
+ * thrown.
  */
+export async function listRecentAuditLogs(companyId: string, limit = 25) {
+  return prisma.auditLog.findMany({
+    where: { companyId },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+}
+
 export async function logAuditEvent(input: AuditEventInput): Promise<void> {
   try {
     await prisma.auditLog.create({

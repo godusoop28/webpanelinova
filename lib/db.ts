@@ -34,8 +34,9 @@ function createClient(): PrismaClient {
  * Lazy singleton: constructing PrismaNeon opens a connection pool, so we
  * only do it the first time a query actually runs, and reuse it across hot
  * reloads (dev) and warm serverless invocations (prod) via globalThis.
- * Never construct eagerly — DATABASE_URL may legitimately be absent while
- * DATA_SOURCE=sheets, and importing this module must not crash that path.
+ * Never construct eagerly — a route that merely imports this module (but
+ * never queries) must not crash just because DATABASE_URL isn't set yet
+ * (e.g. during a build without secrets configured).
  */
 function getClient(): PrismaClient {
   if (!globalForPrisma.__inovaPrisma) {

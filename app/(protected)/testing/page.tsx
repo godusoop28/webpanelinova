@@ -1,12 +1,14 @@
+import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { isDatabaseConfigured } from "@/lib/db";
-import { getAutomationMode } from "@/lib/env";
+import { getAutomationMode, isInternalTestingEnabled } from "@/lib/env";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LeadSimulator } from "@/components/testing/lead-simulator";
 
 export default async function TestingPage() {
   await requireRole("ADMIN");
+  if (!isInternalTestingEnabled()) notFound();
 
   const dbConfigured = isDatabaseConfigured();
   const automationMode = getAutomationMode();
@@ -14,19 +16,19 @@ export default async function TestingPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-ink-900">Pruebas (shadow)</h1>
+        <h1 className="text-xl font-semibold text-ink-900">Diagnóstico interno</h1>
         <p className="text-sm text-ink-500">
-          Simula un lead completo — clasificación de ruta, motor de asignación ponderado y qué se habría
-          enviado a EasyBroker/ManyChat — sin tocar ninguna integración real.
+          Simula un lead completo — clasificación de ruta y motor de asignación — sin enviar nada a
+          EasyBroker ni ManyChat. Solo visible para administradores con acceso interno habilitado.
         </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
         <Badge tone={dbConfigured ? "success" : "danger"}>
-          Base de datos: {dbConfigured ? "configurada" : "falta DATABASE_URL"}
+          Base de datos: {dbConfigured ? "conectada" : "sin conexión"}
         </Badge>
         <Badge tone={automationMode === "shadow" ? "gold" : "warning"}>
-          AUTOMATION_MODE del entorno: {automationMode}
+          Modo de automatización: {automationMode === "shadow" ? "simulación" : "en vivo"}
         </Badge>
       </div>
 
@@ -35,8 +37,7 @@ export default async function TestingPage() {
           <div>
             <CardTitle>Simular lead entrante</CardTitle>
             <CardDescription>
-              Esta página fuerza modo shadow siempre, sin importar AUTOMATION_MODE — nunca puede disparar una
-              llamada real a EasyBroker o ManyChat (ver app/(protected)/testing/actions.ts).
+              Esta herramienta simula siempre — nunca envía una solicitud real a EasyBroker o ManyChat.
             </CardDescription>
           </div>
         </CardHeader>

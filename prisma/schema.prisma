@@ -62,8 +62,20 @@ enum IntegrationType {
   EASYBROKER
   MANYCHAT
   OPENAI
-  GOOGLE_SHEETS
-  MAKE
+}
+
+enum IntegrationJobType {
+  EASYBROKER_CREATE
+  EASYBROKER_ASSIGN
+  MANYCHAT_FIELDS
+  MANYCHAT_FLOW
+}
+
+enum IntegrationJobStatus {
+  PENDING
+  RETRYING
+  SUCCESS
+  FAILED
 }
 
 // ---------------------------------------------------------------------------
@@ -84,16 +96,12 @@ model Company {
   assignmentRules  AssignmentRule[]
   integrations     Integration[]
   auditLogs        AuditLog[]
+  integrationJobs  IntegrationJob[]
 
   @@map("companies")
 }
 
-/**
- * Modelo preparado a futuro. La autenticación real del panel sigue siendo
- * AUTH_PASSWORD + hoja "Usuarios" (ver lib/auth.ts, lib/dal.ts) — este
- * modelo NO sustituye ese mecanismo todavía, solo deja lista la forma para
- * cuando el panel tenga cuentas individuales de verdad.
- */
+/** Autenticación real del panel: email + passwordHash (bcrypt), ver lib/auth.ts. */
 model User {
   id           String   @id @default(cuid())
   companyId    String
@@ -169,7 +177,7 @@ model Lead {
   /** Etiqueta de ruta usada por el motor de asignación (p. ej. "Vi una propiedad"). */
   route        String?
   status       LeadStatus       @default(RECEIVED)
-  /** Procedencia técnica del registro: manychat_webhook, make_legacy, import_sheets, testing_ui. */
+  /** Procedencia técnica del registro: manychat_webhook, import_historico, testing_ui. */
   source       String?
 
   easyBrokerContactRequestId String?
@@ -193,6 +201,7 @@ model Lead {
   assignedAdvisor Advisor?         @relation("LeadAssignedAdvisor", fields: [assignedAdvisorId], references: [id])
   assignments     LeadAssignment[]
   auditLogs       AuditLog[]
+  integrationJobs IntegrationJob[]
 
   @@index([phone])
   @@index([createdAt])
@@ -291,6 +300,34 @@ model AuditLog {
   @@index([createdAt])
   @@index([leadId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Reintentos ante fallos de integraciones externas
+// ---------------------------------------------------------------------------
+
+model IntegrationJob {
+  id        String @id @default(cuid())
+  companyId String
+  leadId    String?
+
+  type    IntegrationJobType
+  status  IntegrationJobStatus @default(PENDING)
+  payload Json
+
+  attempts    Int       @default(0)
+  lastError   String?
+  nextRetryAt DateTime  @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+  lead    Lead?   @relation(fields: [leadId], references: [id])
+
+  @@index([status, nextRetryAt])
+  @@index([leadId])
+  @@map("integration_jobs")
 }
 
 model WebhookEvent {

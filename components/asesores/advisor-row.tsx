@@ -12,7 +12,7 @@ import {
   priorityLabelForWeight,
 } from "@/lib/advisors";
 import { formatMexicoCityDateTime } from "@/lib/timezone";
-import type { AdvisorRow as AdvisorRowType } from "@/lib/google-sheets";
+import type { AdvisorView } from "@/lib/types";
 import {
   pauseAdvisorAction,
   resumeAdvisorAction,
@@ -63,7 +63,7 @@ function PausePanel({ id, onDone }: { id: string; onDone: () => void }) {
   );
 }
 
-export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; leadsHoy: number }) {
+export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorView; leadsHoy: number }) {
   const [editing, setEditing] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [isToggling, startToggle] = useTransition();
@@ -168,8 +168,8 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
           <dd className="truncate text-ink-700">{advisor.emailEasyBroker || "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-500">Tipo de asignación</dt>
-          <dd className="text-ink-700">{advisor.tipoAsignacion || "—"}</dd>
+          <dt className="text-xs text-ink-500">ManyChat</dt>
+          <dd className="truncate text-ink-700">{advisor.manyChatId || "—"}</dd>
         </div>
         <div>
           <dt className="text-xs text-ink-500">Leads hoy</dt>
@@ -186,7 +186,7 @@ export function AdvisorRow({ advisor, leadsHoy }: { advisor: AdvisorRowType; lea
             ) : (
               advisor.rutasPermitidas.map((route) => (
                 <Badge key={route} tone="neutral">
-                  {route}
+                  {route === "Timeout" ? "Sin respuesta" : route}
                 </Badge>
               ))
             )}

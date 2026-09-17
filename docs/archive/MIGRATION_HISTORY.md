@@ -1,4 +1,9 @@
-# Migración a Neon PostgreSQL — guía operativa
+# Migración a Neon PostgreSQL — historial (ARCHIVADO)
+
+> **Este documento es un registro histórico de cómo se hizo la migración,
+> no la arquitectura actual.** Google Sheets y Make ya no son parte del
+> sistema en producción — ver `docs/ARCHITECTURE.md` para la arquitectura
+> final. Se conserva aquí solo como referencia de lo que se hizo y por qué.
 
 Este documento explica la migración del panel de Google Sheets/Make hacia
 Next.js + Prisma + Neon PostgreSQL como backend real. Cubre arquitectura,

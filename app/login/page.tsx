@@ -2,13 +2,9 @@ import { auth, signIn } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { ShieldCheck } from "lucide-react";
-import { isDemoModeActive } from "@/lib/env";
-
-// See app/page.tsx: DEMO_MODE must be re-checked per request.
-export const dynamic = "force-dynamic";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  CredentialsSignin: "Contraseña incorrecta. Intenta de nuevo.",
+  CredentialsSignin: "Correo o contraseña incorrectos.",
   Configuration: "El acceso al panel aún no está configurado. Contacta al equipo técnico.",
   Default: "No pudimos iniciar sesión. Intenta nuevamente.",
 };
@@ -18,9 +14,6 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string; callbackUrl?: string }>;
 }) {
-  if (isDemoModeActive()) {
-    redirect("/dashboard");
-  }
   const session = await auth();
   if (session?.user) {
     redirect("/dashboard");
@@ -61,6 +54,7 @@ export default async function LoginPage({
               "use server";
               try {
                 await signIn("credentials", {
+                  email: formData.get("email"),
                   password: formData.get("password"),
                   redirectTo: params.callbackUrl ?? "/dashboard",
                 });
@@ -74,10 +68,17 @@ export default async function LoginPage({
             className="space-y-3"
           >
             <input
+              type="email"
+              name="email"
+              required
+              autoFocus
+              placeholder="Correo"
+              className="w-full rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 shadow-sm outline-none transition-colors focus:border-gold-500"
+            />
+            <input
               type="password"
               name="password"
               required
-              autoFocus
               placeholder="Contraseña"
               className="w-full rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 shadow-sm outline-none transition-colors focus:border-gold-500"
             />

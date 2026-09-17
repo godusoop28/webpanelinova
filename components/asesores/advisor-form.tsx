@@ -4,16 +4,13 @@ import { useActionState, useEffect } from "react";
 import { UserPlus, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ADVISOR_PRIORITY_OPTIONS, LEAD_ROUTES } from "@/lib/advisors";
-import type { AdvisorRow } from "@/lib/google-sheets";
+import type { AdvisorView } from "@/lib/types";
 import type { AdvisorFormState } from "@/app/(protected)/asesores/actions";
 
 const initialState: AdvisorFormState = {};
 
 const inputClass =
   "w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400";
-
-const ROL_SUGGESTIONS = ["Asesor", "Coordinadora", "Gerente", "Comodín"];
-const TIPO_ASIGNACION_SUGGESTIONS = ["Rotación", "Ambas", "Exclusiva"];
 
 export function AdvisorForm({
   advisor,
@@ -22,7 +19,7 @@ export function AdvisorForm({
   onSuccess,
   onCancel,
 }: {
-  advisor?: AdvisorRow;
+  advisor?: AdvisorView;
   action: (prevState: AdvisorFormState, formData: FormData) => Promise<AdvisorFormState>;
   submitLabel?: string;
   onSuccess?: () => void;
@@ -67,29 +64,6 @@ export function AdvisorForm({
           <input name="manyChatId" defaultValue={advisor?.manyChatId} className={inputClass} />
         </label>
         <label className="space-y-1 text-xs font-medium text-ink-600">
-          Rol
-          <input name="rol" list="rol-suggestions" defaultValue={advisor?.rol ?? "Asesor"} className={inputClass} />
-          <datalist id="rol-suggestions">
-            {ROL_SUGGESTIONS.map((rol) => (
-              <option key={rol} value={rol} />
-            ))}
-          </datalist>
-        </label>
-        <label className="space-y-1 text-xs font-medium text-ink-600">
-          Tipo de asignación
-          <input
-            name="tipoAsignacion"
-            list="tipo-asignacion-suggestions"
-            defaultValue={advisor?.tipoAsignacion ?? "Rotación"}
-            className={inputClass}
-          />
-          <datalist id="tipo-asignacion-suggestions">
-            {TIPO_ASIGNACION_SUGGESTIONS.map((tipo) => (
-              <option key={tipo} value={tipo} />
-            ))}
-          </datalist>
-        </label>
-        <label className="space-y-1 text-xs font-medium text-ink-600">
           Prioridad
           <select name="peso" defaultValue={advisor?.peso ?? 5} className={inputClass}>
             {priorityOptions.map((option) => (
@@ -127,7 +101,7 @@ export function AdvisorForm({
                 defaultChecked={advisor?.rutasPermitidas.includes(route) ?? false}
                 className="size-4 rounded border-ink-300"
               />
-              {route}
+              {route === "Timeout" ? "Sin respuesta" : route}
             </label>
           ))}
         </div>

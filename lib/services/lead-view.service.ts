@@ -1,17 +1,25 @@
 import "server-only";
-import type { Lead, LeadAssignment, AuditLog } from "@prisma/client";
-import type { LeadRow } from "@/lib/google-sheets";
+import type { Lead, LeadAssignment, AuditLog, AssignmentMethod } from "@prisma/client";
+import type { LeadView } from "@/lib/types";
 import type { LeadLike } from "@/lib/metrics";
 import { prisma } from "@/lib/db";
 import { findLeadsPaginated, findLeadById, type LeadFilters } from "@/lib/repositories/lead.repository";
+import { leadStatusLabel } from "@/lib/lead-status";
 
-type LeadWithAdvisor = Lead & { assignedAdvisor: { id: string; name: string; phone: string } | null };
+export { LEAD_STATUS_LABELS, leadStatusLabel } from "@/lib/lead-status";
 
-/** Adapts a Postgres Lead into the legacy LeadRow shape /leads already renders (Fase 64). */
-function dbLeadToRow(lead: LeadWithAdvisor): LeadRow {
+const DIRECT_METHODS: AssignmentMethod[] = ["DIRECT_PROPERTY_ADVISOR", "CAMPAIGN_DIRECT"];
+
+type LeadWithRelations = Lead & {
+  assignedAdvisor: { id: string; name: string; phone: string } | null;
+  assignments: LeadAssignment[];
+};
+
+function dbLeadToView(lead: LeadWithRelations): LeadView {
   const digits = lead.phone.replace(/\D/g, "");
+  const latest = lead.assignments[0];
   return {
-    rowNumber: 0,
+    id: lead.id,
     fechaHora: lead.createdAt.toISOString(),
     nombre: lead.name,
     telefono: lead.phone,
@@ -19,21 +27,18 @@ function dbLeadToRow(lead: LeadWithAdvisor): LeadRow {
     datoEnviado: lead.propertyData ?? "",
     origen: lead.origin ?? "",
     ruta: lead.route ?? "",
-    estadoEasyBroker: lead.status,
+    estado: leadStatusLabel(lead.status),
     linkWhatsappCliente: digits ? `https://wa.me/${digits}` : "",
     asesorAsignado: lead.assignedAdvisor?.name ?? "",
-    observaciones: "",
-    idAsesorAsignado: lead.assignedAdvisorId ?? "",
-    whatsappAsesorAsignado: lead.assignedAdvisor?.phone ?? "",
-    fechaAsignacion: "",
-    tipoAsignacion: "",
-    estadoEnvioAsesor: "",
-    observacionAsignacion: "",
+    asesorTelefono: lead.assignedAdvisor?.phone ?? "",
+    metodoAsignacion: latest ? (DIRECT_METHODS.includes(latest.method) ? "Directa" : "Ruleta") : "",
+    manyChatNotificado: latest?.manyChatNotified ?? false,
+    easyBrokerConfirmado: latest?.easyBrokerConfirmed ?? false,
   };
 }
 
 export interface LeadListPage {
-  leads: (LeadRow & { id: string })[];
+  leads: LeadView[];
   total: number;
   page: number;
   limit: number;
@@ -42,7 +47,7 @@ export interface LeadListPage {
 export async function listLeadRows(filters: LeadFilters, page: number, limit: number): Promise<LeadListPage> {
   const result = await findLeadsPaginated(filters, page, limit);
   return {
-    leads: result.items.map((lead) => ({ ...dbLeadToRow(lead as LeadWithAdvisor), id: lead.id })),
+    leads: result.items.map((lead) => dbLeadToView(lead as LeadWithRelations)),
     total: result.total,
     page: result.page,
     limit: result.limit,
@@ -56,12 +61,10 @@ export interface LeadDetail {
 }
 
 /**
- * Fase 35: dashboard KPIs reuse lib/metrics.ts's computeLeadMetrics
- * unchanged — this just feeds it DB-shaped rows instead of Sheets rows.
- * Bounded by `limit` (not paginated end-to-end like /leads) because a
- * date-range aggregation over a moderate window is exactly the case Fase
- * 40's "don't load thousands of leads in one request" is warning about
- * avoiding for the *list* UI, not for this kind of bounded read.
+ * Dashboard KPIs reuse lib/metrics.ts's computeLeadMetrics unchanged — this
+ * just feeds it DB-shaped rows. Bounded by `limit` rather than paginated
+ * end-to-end like /leads, since a date-range aggregation over a moderate
+ * window is a different access pattern than the leads list.
  */
 export async function listLeadMetricsRows(companyId: string, from: Date, to: Date, limit = 5000): Promise<LeadLike[]> {
   const leads = await prisma.lead.findMany({
@@ -73,7 +76,7 @@ export async function listLeadMetricsRows(companyId: string, from: Date, to: Dat
 
   return leads.map((lead) => {
     const latest = lead.assignments[0];
-    const isDirect = latest?.method === "DIRECT_PROPERTY_ADVISOR" || latest?.method === "CAMPAIGN_DIRECT";
+    const isDirect = latest ? DIRECT_METHODS.includes(latest.method) : false;
     return {
       fechaHora: lead.createdAt.toISOString(),
       telefono: lead.phone,
@@ -86,8 +89,42 @@ export async function listLeadMetricsRows(companyId: string, from: Date, to: Dat
   });
 }
 
+export interface LeadReportRow {
+  fechaHora: string;
+  origen: string;
+  asesorAsignado: string;
+  estadoEnvio: "enviado" | "pendiente" | "error";
+}
+
+/** Fase 26: reportes por asesor/origen/periodo, todo desde Postgres. */
+export async function listLeadReportRows(companyId: string, from: Date, to: Date, limit = 5000): Promise<LeadReportRow[]> {
+  const leads = await prisma.lead.findMany({
+    where: { companyId, createdAt: { gte: from, lte: to } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: {
+      assignedAdvisor: { select: { name: true } },
+      assignments: { take: 1, orderBy: { assignedAt: "desc" } },
+    },
+  });
+
+  return leads.map((lead) => {
+    const latest = lead.assignments[0];
+    let estadoEnvio: "enviado" | "pendiente" | "error" = "pendiente";
+    if (lead.status === "FAILED") estadoEnvio = "error";
+    else if (latest?.manyChatNotified) estadoEnvio = "enviado";
+    return {
+      fechaHora: lead.createdAt.toISOString(),
+      origen: lead.origin ?? "",
+      asesorAsignado: lead.assignedAdvisor?.name ?? "",
+      estadoEnvio,
+    };
+  });
+}
+
 export async function getLeadDetail(id: string): Promise<LeadDetail | null> {
-  const lead = await findLeadById(id);
-  if (!lead) return null;
-  return lead as unknown as LeadDetail;
+  const result = await findLeadById(id);
+  if (!result) return null;
+  const { assignments, auditLogs, ...lead } = result;
+  return { lead, assignments, auditLogs } as LeadDetail;
 }

@@ -2,10 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, MessageCircle } from "lucide-react";
 import { requireSection } from "@/lib/dal";
-import { getDataSource, isDemoModeActive } from "@/lib/env";
+import { getDefaultCompanyId } from "@/lib/company";
 import { getLeadDetail } from "@/lib/services/lead-view.service";
+import { listAdvisorViews } from "@/lib/services/advisor.service";
+import { leadStatusLabel } from "@/lib/lead-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LeadActionsPanel } from "@/components/leads/lead-actions-panel";
 
 function formatDateTime(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
@@ -23,8 +26,6 @@ function statusTone(status: string): "success" | "warning" | "danger" | "neutral
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireSection("leads");
-  const usingDatabase = !isDemoModeActive() && getDataSource() === "database";
-  if (!usingDatabase) notFound();
 
   const { id } = await params;
   const detail = await getLeadDetail(id);
@@ -32,6 +33,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   const { lead, assignments, auditLogs } = detail;
   const digits = lead.phone.replace(/\D/g, "");
+
+  const companyId = await getDefaultCompanyId();
+  const advisors = await listAdvisorViews(companyId);
+  const reassignOptions = advisors.filter((a) => a.activo).map((a) => ({ id: a.id, nombre: a.nombre }));
 
   return (
     <div className="space-y-5">
@@ -46,7 +51,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <p className="text-sm text-ink-500">{lead.phone}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={statusTone(lead.status)}>{lead.status}</Badge>
+          <Badge tone={statusTone(lead.status)}>{leadStatusLabel(lead.status)}</Badge>
           <Badge tone="neutral">{lead.interestType}</Badge>
           {digits && (
             <a
@@ -88,23 +93,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <dt className="text-xs text-ink-500">Asesor asignado</dt>
               <dd className="text-ink-800">{lead.assignedAdvisor?.name ?? "Sin asignar"}</dd>
             </div>
-            <div>
-              <dt className="text-xs text-ink-500">contact_request EasyBroker</dt>
-              <dd className="font-mono text-xs text-ink-800">{lead.easyBrokerContactRequestId || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-ink-500">Contacto EasyBroker</dt>
-              <dd className="font-mono text-xs text-ink-800">{lead.easyBrokerContactId || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-ink-500">Propiedad EasyBroker</dt>
-              <dd className="font-mono text-xs text-ink-800">{lead.easyBrokerPropertyId || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-ink-500">requestId</dt>
-              <dd className="truncate font-mono text-xs text-ink-800">{lead.requestId || "—"}</dd>
-            </div>
           </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Gestión</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LeadActionsPanel leadId={lead.id} currentStatus={lead.status} advisors={reassignOptions} />
         </CardContent>
       </Card>
 
@@ -133,7 +131,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
       <Card>
         <CardHeader>
-          <CardTitle>Historial (AuditLog)</CardTitle>
+          <CardTitle>Historial</CardTitle>
         </CardHeader>
         <CardContent>
           {auditLogs.length === 0 ? (

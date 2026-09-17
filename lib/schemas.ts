@@ -19,8 +19,6 @@ export const AdvisorInputSchema = z.object({
     .trim()
     .min(8, "El WhatsApp debe incluir lada y número.")
     .transform((value) => value.replace(/\s+/g, "")),
-  rol: z.string().trim().min(1, "El rol es obligatorio."),
-  tipoAsignacion: z.string().trim().min(1, "El tipo de asignación es obligatorio."),
   emailEasyBroker: z.union([
     z.literal(""),
     z.string().trim().toLowerCase().email("Correo inválido."),
@@ -55,53 +53,36 @@ export const SimulateDistributionInputSchema = z.object({
   iterations: z.coerce.number().int().min(1).max(1000),
 });
 
-/**
- * Body Make sends to POST /api/integrations/make/select-advisor. `ruta` is
- * kept as a free string (not a strict enum of LEAD_ROUTES) so a route added
- * on the Make side isn't rejected outright before the code catches up —
- * advisors without an explicit route restriction still match it.
- */
-export const SelectAdvisorRequestSchema = z.object({
-  ruta: z.string().trim().min(1, "ruta es obligatoria."),
-  origen: z.string().trim().optional(),
-  telefono: z.string().trim().optional(),
-  propertyId: z.string().trim().nullable().optional(),
+// ---------------------------------------------------------------------------
+// Usuarios del panel
+// ---------------------------------------------------------------------------
+
+export const CreateUserInputSchema = z.object({
+  nombre: z.string().trim().min(2, "El nombre debe tener al menos 2 caracteres."),
+  correo: z.string().trim().toLowerCase().email("Correo inválido."),
+  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
+  rol: RoleSchema,
+  activo: z.boolean(),
 });
 
-export type SelectAdvisorRequest = z.infer<typeof SelectAdvisorRequestSchema>;
+export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
 
-export const AuthorizedUserInputSchema = z.object({
+export const UpdateUserInputSchema = z.object({
   nombre: z.string().trim().min(2, "El nombre debe tener al menos 2 caracteres."),
   correo: z.string().trim().toLowerCase().email("Correo inválido."),
   rol: RoleSchema,
   activo: z.boolean(),
 });
 
-export type AuthorizedUserInput = z.infer<typeof AuthorizedUserInputSchema>;
+export type UpdateUserInput = z.infer<typeof UpdateUserInputSchema>;
 
-/**
- * Payload accepted from Make on the inbound webhook. Fields mirror the
- * columns of the EventosMake sheet; only `escenario` and `evento` are
- * mandatory since Make scenarios vary in what data they carry.
- */
-export const MakeEventPayloadSchema = z.object({
-  escenario: z.string().trim().min(1),
-  evento: z.string().trim().min(1),
-  estado: z.string().trim().default("recibido"),
-  lead: z.string().trim().optional(),
-  telefono: z.string().trim().optional(),
-  propiedad: z.string().trim().optional(),
-  asesor: z.string().trim().optional(),
-  mensaje: z.string().trim().optional(),
-  ejecucionId: z.string().trim().optional(),
+export const ResetPasswordInputSchema = z.object({
+  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
 });
 
-export type MakeEventPayload = z.infer<typeof MakeEventPayloadSchema>;
-
 // ---------------------------------------------------------------------------
-// Webhooks nuevos (Fase 14/23) — nombres de campo compatibles con el
-// payload que ManyChat ya envía hoy a Make, para no tener que tocar el
-// flow de ManyChat todavía.
+// Webhooks de ManyChat — nombres de campo compatibles con el payload que
+// ManyChat ya envía hoy, para minimizar cambios en su flow.
 // ---------------------------------------------------------------------------
 
 export const IncomingLeadWebhookSchema = z.object({
@@ -111,6 +92,8 @@ export const IncomingLeadWebhookSchema = z.object({
   datos_propiedad: z.string().trim().optional().default(""),
   origen: z.string().trim().optional().default(""),
   subscriber_id: z.string().trim().optional(),
+  manychat_subscriber_id: z.string().trim().optional(),
+  request_id: z.string().trim().optional(),
   requestId: z.string().trim().optional(),
 });
 
@@ -118,6 +101,30 @@ export type IncomingLeadWebhookPayload = z.infer<typeof IncomingLeadWebhookSchem
 
 export const PropertySearchWebhookSchema = z.object({
   busqueda_propiedad: z.string().trim().min(1, "busqueda_propiedad es obligatoria."),
+});
+
+// ---------------------------------------------------------------------------
+// Leads
+// ---------------------------------------------------------------------------
+
+export const LeadStatusSchema = z.enum([
+  "RECEIVED",
+  "PROCESSING",
+  "CREATED_IN_EASYBROKER",
+  "ASSIGNED",
+  "NOTIFIED",
+  "COMPLETED",
+  "FAILED",
+]);
+
+export const UpdateLeadInputSchema = z.object({
+  status: LeadStatusSchema.optional(),
+  observaciones: z.string().trim().max(1000).optional(),
+});
+
+export const ReassignLeadInputSchema = z.object({
+  advisorId: z.string().trim().min(1, "Selecciona un asesor."),
+  reason: z.string().trim().max(500).optional(),
 });
 
 export const DateRangePresetSchema = z.enum([

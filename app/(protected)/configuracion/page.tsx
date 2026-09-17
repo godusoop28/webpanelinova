@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/dal";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { env, isDemoModeActive } from "@/lib/env";
+import { env } from "@/lib/env";
 
 function safeRead(read: () => string): string | null {
   try {
@@ -12,8 +12,7 @@ function safeRead(read: () => string): string | null {
 
 export default async function ConfiguracionPage() {
   const user = await requireRole("ADMIN");
-
-  const spreadsheetId = safeRead(() => env.google.spreadsheetId);
+  const fallbackAgentEmail = safeRead(() => env.easybroker.fallbackAgentEmail);
 
   return (
     <div className="space-y-6">
@@ -25,11 +24,6 @@ export default async function ConfiguracionPage() {
       <Card>
         <CardHeader>
           <CardTitle>Cuenta</CardTitle>
-          <CardDescription>
-            {isDemoModeActive()
-              ? "Modo demostración: sesión automática, sin contraseña."
-              : "Sesión iniciada con la contraseña de acceso al panel."}
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-1 text-sm text-ink-700">
           <p>
@@ -40,26 +34,21 @@ export default async function ConfiguracionPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Fuente de datos</CardTitle>
+          <CardTitle>Asignación de leads</CardTitle>
           <CardDescription>
-            Google Sheet conectado como fuente de leads, asesores y usuarios.
+            Reglas del motor de asignación. Los valores por asesor (peso, límite diario, rutas y
+            pausas) se administran desde Asesores.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-ink-700">
-          {spreadsheetId ? (
-            <a
-              href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-gold-700 hover:text-gold-600"
-            >
-              Abrir Google Sheet →
-            </a>
-          ) : (
-            <p className="text-ink-500">
-              GOOGLE_SPREADSHEET_ID no está configurado. Ve a Integraciones para más detalle.
-            </p>
-          )}
+          <p>
+            <span className="text-ink-500">Correo comodín de EasyBroker:</span>{" "}
+            {fallbackAgentEmail ?? "No configurado"}
+          </p>
+          <p className="mt-1 text-xs text-ink-500">
+            Cuando una propiedad tiene este correo como agente, el lead pasa a la ruleta ponderada
+            en vez de asignarse directo.
+          </p>
         </CardContent>
       </Card>
 
@@ -70,7 +59,7 @@ export default async function ConfiguracionPage() {
         <CardContent className="space-y-2 text-sm text-ink-700">
           <p>
             <span className="font-medium text-ink-900">ADMIN</span> — acceso total, gestión de
-            usuarios, integraciones y sincronizaciones.
+            usuarios e integraciones.
           </p>
           <p>
             <span className="font-medium text-ink-900">DIRECCION</span> — resumen, leads,

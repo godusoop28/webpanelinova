@@ -11,7 +11,7 @@ export function NewUserForm() {
   const [state, action, pending] = useActionState(createUserAction, initialState);
 
   return (
-    <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-[1.2fr_1.4fr_1fr_auto_auto]">
+    <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1.1fr_1.3fr_1fr_1fr_auto_auto]">
       <input
         name="nombre"
         placeholder="Nombre completo"
@@ -23,6 +23,14 @@ export function NewUserForm() {
         type="email"
         placeholder="correo@century21inova.com"
         required
+        className="rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+      />
+      <input
+        name="password"
+        type="password"
+        placeholder="Contraseña (mín. 8 caracteres)"
+        required
+        minLength={8}
         className="rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
       />
       <select
@@ -42,9 +50,7 @@ export function NewUserForm() {
         <UserPlus className="size-4" aria-hidden />
         Agregar
       </Button>
-      {state.error && (
-        <p className="sm:col-span-5 text-xs text-rose-600">{state.error}</p>
-      )}
+      {state.error && <p className="sm:col-span-2 lg:col-span-6 text-xs text-rose-600">{state.error}</p>}
     </form>
   );
 }

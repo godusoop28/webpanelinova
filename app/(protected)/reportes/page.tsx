@@ -1,6 +1,7 @@
 import { requireSection } from "@/lib/dal";
-import { getLeadRows } from "@/lib/google-sheets";
-import { isDateInRange, resolveDateRange, type DateRangePreset } from "@/lib/metrics";
+import { getDefaultCompanyId } from "@/lib/company";
+import { listLeadReportRows } from "@/lib/services/lead-view.service";
+import { resolveDateRange, type DateRangePreset } from "@/lib/metrics";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { LeadsByDayChart, LeadsByOriginChart } from "@/components/dashboard/charts";
 import { Card } from "@/components/ui/card";
@@ -20,15 +21,14 @@ export default async function ReportesPage({
     params.from && params.to ? { from: params.from, to: params.to } : undefined
   );
 
-  let leads: Awaited<ReturnType<typeof getLeadRows>> = [];
+  let inRange: Awaited<ReturnType<typeof listLeadReportRows>> = [];
   let loadError: string | null = null;
   try {
-    leads = await getLeadRows();
+    const companyId = await getDefaultCompanyId();
+    inRange = await listLeadReportRows(companyId, range.from, range.to);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Error desconocido";
   }
-
-  const inRange = leads.filter((lead) => isDateInRange(new Date(lead.fechaHora), range));
 
   const chartByDay = (() => {
     const buckets = new Map<string, number>();
@@ -55,10 +55,9 @@ export default async function ReportesPage({
       const key = lead.asesorAsignado || "Sin asignar";
       const bucket = buckets.get(key) ?? { total: 0, enviadas: 0, pendientes: 0, error: 0 };
       bucket.total += 1;
-      const estado = lead.estadoEnvioAsesor.toLowerCase();
-      if (estado.includes("error")) bucket.error += 1;
-      else if (estado.includes("pendient")) bucket.pendientes += 1;
-      else if (estado) bucket.enviadas += 1;
+      if (lead.estadoEnvio === "error") bucket.error += 1;
+      else if (lead.estadoEnvio === "pendiente") bucket.pendientes += 1;
+      else bucket.enviadas += 1;
       buckets.set(key, bucket);
     }
     return Array.from(buckets.entries())
@@ -81,7 +80,7 @@ export default async function ReportesPage({
       </div>
 
       {loadError ? (
-        <ErrorState title="No se pudo cargar Google Sheets" description={loadError} />
+        <ErrorState title="No se pudieron cargar los reportes" description={loadError} />
       ) : inRange.length === 0 ? (
         <EmptyState title="Sin datos en el periodo seleccionado" />
       ) : (

@@ -1,37 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Panel Century 21 Innova
 
-## Getting Started
+Panel administrativo, backend y motor de asignación de leads para
+Century 21 Innova. Next.js (App Router) + Prisma + Neon PostgreSQL, con
+integración directa a EasyBroker, ManyChat y OpenAI.
 
-First, run the development server:
+Ver **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** para la arquitectura
+completa, el motor de asignación, y las variables de entorno.
+
+## Primeros pasos
 
 ```bash
+npm install
+cp .env.example .env.local   # completa los valores reales
+npx prisma migrate deploy    # aplica las migraciones contra tu DATABASE_URL
+npm run db:seed              # crea la Company y el primer usuario ADMIN
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Script | Qué hace |
+|---|---|
+| `npm run dev` | Servidor de desarrollo |
+| `npm run build` | Build de producción |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Suite de pruebas (Vitest) |
+| `npm run db:seed` | Siembra la Company y el primer ADMIN |
 
-## Learn More
+## Estructura
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-"# webpanelinova" 
+- `app/` — páginas del panel y route handlers (API, webhooks).
+- `lib/services/` — lógica de negocio (motor de asignación, leads, asesores, usuarios).
+- `lib/repositories/` — acceso a datos vía Prisma.
+- `lib/integrations/` — clientes de EasyBroker, ManyChat y OpenAI.
+- `prisma/schema.prisma` — modelo de datos.
+- `docs/` — arquitectura y documentación operativa.

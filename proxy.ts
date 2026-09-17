@@ -1,21 +1,17 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { isDemoModeActive } from "@/lib/env";
 
 const PUBLIC_ROUTES = ["/login"];
 
 /**
- * Optimistic session check only (reads the JWT cookie, no Sheets calls).
- * This is not the security boundary: every page, Server Action, and Route
+ * Optimistic session check only (reads the JWT cookie, no DB calls). This
+ * is not the security boundary: every page, Server Action, and Route
  * Handler re-verifies the session and role server-side. See
  * lib/permissions.ts and the "requireUser"/"requireRole" helpers used
  * throughout app/(protected).
  */
 export async function proxy(request: NextRequest) {
-  if (isDemoModeActive()) {
-    return NextResponse.next();
-  }
   const { pathname } = request.nextUrl;
   const session = await auth();
   const isAuthenticated = Boolean(session?.user);

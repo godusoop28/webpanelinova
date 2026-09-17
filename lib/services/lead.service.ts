@@ -21,6 +21,7 @@ import {
 import { notifyAdvisor, ManyChatApiError } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository";
+import { enqueueEasyBrokerCreate, enqueueEasyBrokerAssign, enqueueManyChatFlow } from "@/lib/services/retry.service";
 
 const MANYCHAT_SOURCE = "WhatsApp ManyChat";
 // Matches EasyBroker's Make scenario pattern (?<codigo>EB-[A-Za-z0-9-]+) —
@@ -301,9 +302,9 @@ export async function processIncomingLead(
       companyId,
       leadId: lead.id,
       advisorId: advisor.id,
-      eventType: "SHADOW_ACTION_SKIPPED",
+      eventType: "AUTOMATION_SIMULATED",
       status: "skipped",
-      message: "AUTOMATION_MODE=shadow: no se llamó a EasyBroker ni a ManyChat.",
+      message: "Simulación interna: no se envió información real a EasyBroker ni a ManyChat.",
     });
     return {
       mode,
@@ -355,6 +356,15 @@ export async function processIncomingLead(
       status: "error",
       message: error instanceof EasyBrokerApiError ? error.message : error instanceof Error ? error.message : "Error desconocido",
     });
+    await enqueueEasyBrokerCreate(companyId, lead.id, {
+      name: input.nombre,
+      phone,
+      message: property
+        ? `Lead recibido desde WhatsApp. El cliente vio la propiedad ${property.public_id}.\n\nDato enviado: ${input.datosPropiedad ?? ""}\nInterés: ${input.interesCliente}\nOrigen: ${MANYCHAT_SOURCE}`
+        : `Lead recibido desde WhatsApp. Interés: ${input.interesCliente}. Ref: ${context.requestId}`,
+      source: MANYCHAT_SOURCE,
+      propertyId: property?.public_id,
+    });
   }
 
   if (contactRequestId) {
@@ -391,6 +401,9 @@ export async function processIncomingLead(
           status: "error",
           message: error instanceof Error ? error.message : "Error desconocido",
         });
+        if (advisor.easyBrokerEmail) {
+          await enqueueEasyBrokerAssign(companyId, lead.id, { contactId, advisorEmail: advisor.easyBrokerEmail, advisorId: advisor.id });
+        }
       }
     } else {
       actions.push("easybroker_contact_not_found");
@@ -431,6 +444,10 @@ export async function processIncomingLead(
         status: "error",
         message: error instanceof ManyChatApiError ? error.message : error instanceof Error ? error.message : "Error desconocido",
       });
+      const flowNs = env.manychat.advisorFlowId;
+      if (flowNs) {
+        await enqueueManyChatFlow(companyId, lead.id, { subscriberId: advisor.manyChatSubscriberId, flowNs });
+      }
     }
   } else {
     await logAuditEvent({

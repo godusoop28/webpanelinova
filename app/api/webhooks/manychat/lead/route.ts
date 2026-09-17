@@ -10,11 +10,11 @@ import { findLeadByRequestId } from "@/lib/repositories/lead.repository";
 import { logAuditEvent } from "@/lib/services/audit.service";
 
 /**
- * Fase 14: real intake endpoint for ManyChat's lead flow, kept payload-
- * compatible with what it already sends to Make today so the ManyChat flow
- * itself doesn't need to change yet (Fase 45's cutover plan repoints it
- * here later — not part of this change). AUTOMATION_MODE is read from env
- * only (Fase 55): this endpoint never lets a caller force shadow/live.
+ * Real-time lead intake from ManyChat. Accepts nombre, telefono_cliente,
+ * interes_cliente, datos_propiedad, origen, and either subscriber_id /
+ * manychat_subscriber_id and requestId / request_id (all optional).
+ * AUTOMATION_MODE is read from env only: this endpoint never lets a caller
+ * force shadow/live.
  */
 export async function POST(request: NextRequest) {
   const authError = checkIntegrationSecret(request);
@@ -42,9 +42,11 @@ export async function POST(request: NextRequest) {
     );
   }
   const payload = parsed.data;
+  const subscriberId = payload.subscriber_id || payload.manychat_subscriber_id;
 
   const requestId =
     payload.requestId ||
+    payload.request_id ||
     buildLeadFingerprint({
       phone: payload.telefono_cliente,
       interestType: payload.interes_cliente,
@@ -56,7 +58,7 @@ export async function POST(request: NextRequest) {
 
   const { isDuplicateLead, webhookEventId } = await recordWebhookDelivery({
     provider: "manychat",
-    externalId: payload.subscriber_id ? `${payload.subscriber_id}:${requestId}` : undefined,
+    externalId: subscriberId ? `${subscriberId}:${requestId}` : undefined,
     eventType: "lead",
     payload,
     requestId,
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
         interesCliente: payload.interes_cliente,
         datosPropiedad: payload.datos_propiedad,
         origen: payload.origen,
-        subscriberId: payload.subscriber_id,
+        subscriberId,
         requestId,
       },
       { source: "manychat_webhook", requestId }

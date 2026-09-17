@@ -53,7 +53,10 @@ export async function findLeadsPaginated(
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
-      include: { assignedAdvisor: { select: { id: true, name: true, phone: true } } },
+      include: {
+        assignedAdvisor: { select: { id: true, name: true, phone: true } },
+        assignments: { take: 1, orderBy: { assignedAt: "desc" } },
+      },
     }),
     prisma.lead.count({ where }),
   ]);
