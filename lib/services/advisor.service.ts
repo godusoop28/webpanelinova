@@ -13,6 +13,7 @@ import {
 import {
   dbAdvisorToView,
   dbIndefinitePauseDate,
+  effectiveImportWeight,
   routeLabelsToAllowedFlags,
 } from "@/lib/advisors";
 import type { AdvisorRow } from "@/lib/google-sheets";
@@ -100,7 +101,7 @@ export async function importAdvisorsFromSheets(companyId: string): Promise<Impor
         easyBrokerEmail: email,
         manyChatSubscriberId: row.manyChatId || null,
         active: row.activo,
-        weight: row.peso,
+        weight: effectiveImportWeight(row),
         dailyLimit: row.limiteDiario,
         pausedUntil: row.pausadoHasta
           ? row.pausadoHasta === "INDEFINIDO"

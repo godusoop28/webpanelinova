@@ -98,6 +98,22 @@ export function isEligibleForRotation(advisor: AdvisorRow): boolean {
   );
 }
 
+/**
+ * The Postgres Advisor model has no `rol` field (Fase 2 of the migration
+ * spec deliberately left it out) — a manager/admin/wildcard row from the
+ * legacy sheet (rol "Gerente"/"Administrador"/"Comodín", or tipoAsignacion
+ * "Exclusivo") is represented in the new schema as weight 0 instead, since
+ * lib/repositories/assignment.repository.ts's eligibility query already
+ * requires weight > 0. Used by the Sheets/Excel importers so those rows
+ * keep their real easyBrokerEmail (for direct-match lookups) without ever
+ * being pickable by the weighted rotation.
+ */
+export function effectiveImportWeight(row: Pick<AdvisorRow, "rol" | "tipoAsignacion" | "peso">): number {
+  const rotationEligible =
+    ROTATION_ELIGIBLE_ROLES.includes(row.rol.trim()) && !isExclusiveAssignment(row.tipoAsignacion);
+  return rotationEligible ? row.peso : 0;
+}
+
 // ---------------------------------------------------------------------------
 // Pausa
 // ---------------------------------------------------------------------------
