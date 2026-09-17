@@ -27,6 +27,23 @@ export interface EasyBrokerContactRequest {
   property_id?: string;
 }
 
+/**
+ * EasyBroker's JSON actually returns `id` and `contact_id` as numbers, not
+ * strings (confirmed against the real API — easy to miss since the rest of
+ * the API returns string ids like "EB-WN8585"). Every field this app
+ * persists is typed as a Postgres String column, so normalize here, once,
+ * rather than at every call site.
+ */
+function normalizeContactRequest(raw: Record<string, unknown>): EasyBrokerContactRequest {
+  return {
+    id: raw.id != null ? String(raw.id) : undefined,
+    contact_id: raw.contact_id != null ? String(raw.contact_id) : undefined,
+    phone: typeof raw.phone === "string" ? raw.phone : undefined,
+    source: typeof raw.source === "string" ? raw.source : undefined,
+    property_id: raw.property_id != null ? String(raw.property_id) : undefined,
+  };
+}
+
 const RETRY_OPTIONS = { maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 4000 };
 
 export async function getProperty(publicId: string): Promise<EasyBrokerProperty> {
@@ -62,18 +79,19 @@ export async function createContactRequest(input: {
     source: input.source,
   };
   if (input.propertyId) body.property_id = input.propertyId;
-  return withRetry(
-    () => easyBrokerRequest<EasyBrokerContactRequest>({ method: "POST", path: "/contact_requests", body }),
+  const raw = await withRetry(
+    () => easyBrokerRequest<Record<string, unknown>>({ method: "POST", path: "/contact_requests", body }),
     { ...RETRY_OPTIONS, maxAttempts: 4 }
   );
+  return normalizeContactRequest(raw);
 }
 
 export async function listRecentContactRequests(): Promise<EasyBrokerContactRequest[]> {
   const result = await withRetry(
-    () => easyBrokerRequest<{ content: EasyBrokerContactRequest[] }>({ path: "/contact_requests" }),
+    () => easyBrokerRequest<{ content: Record<string, unknown>[] }>({ path: "/contact_requests" }),
     RETRY_OPTIONS
   );
-  return result.content ?? [];
+  return (result.content ?? []).map(normalizeContactRequest);
 }
 
 /**
