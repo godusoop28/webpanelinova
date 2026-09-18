@@ -95,6 +95,8 @@ export const IncomingLeadWebhookSchema = z.object({
   manychat_subscriber_id: z.string().trim().optional(),
   request_id: z.string().trim().optional(),
   requestId: z.string().trim().optional(),
+  titulo_propiedad: z.string().trim().optional(),
+  url_propiedad: z.string().trim().optional(),
 });
 
 export type IncomingLeadWebhookPayload = z.infer<typeof IncomingLeadWebhookSchema>;

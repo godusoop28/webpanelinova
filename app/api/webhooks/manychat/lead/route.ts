@@ -12,9 +12,10 @@ import { logAuditEvent } from "@/lib/services/audit.service";
 /**
  * Real-time lead intake from ManyChat. Accepts nombre, telefono_cliente,
  * interes_cliente, datos_propiedad, origen, and either subscriber_id /
- * manychat_subscriber_id and requestId / request_id (all optional).
- * AUTOMATION_MODE is read from env only: this endpoint never lets a caller
- * force shadow/live.
+ * manychat_subscriber_id, requestId / request_id, and titulo_propiedad /
+ * url_propiedad (all optional — unknown extra fields are stripped, not
+ * rejected). AUTOMATION_MODE is read from env only: this endpoint never
+ * lets a caller force shadow/live.
  */
 export async function POST(request: NextRequest) {
   const authError = checkIntegrationSecret(request);
@@ -88,6 +89,8 @@ export async function POST(request: NextRequest) {
         origen: payload.origen,
         subscriberId,
         requestId,
+        tituloPropiedad: payload.titulo_propiedad,
+        urlPropiedad: payload.url_propiedad,
       },
       { source: "manychat_webhook", requestId }
     );

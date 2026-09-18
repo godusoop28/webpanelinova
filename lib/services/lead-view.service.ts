@@ -13,6 +13,7 @@ const DIRECT_METHODS: AssignmentMethod[] = ["DIRECT_PROPERTY_ADVISOR", "CAMPAIGN
 type LeadWithRelations = Lead & {
   assignedAdvisor: { id: string; name: string; phone: string } | null;
   assignments: LeadAssignment[];
+  auditLogs: AuditLog[];
 };
 
 function dbLeadToView(lead: LeadWithRelations): LeadView {
@@ -34,6 +35,7 @@ function dbLeadToView(lead: LeadWithRelations): LeadView {
     metodoAsignacion: latest ? (DIRECT_METHODS.includes(latest.method) ? "Directa" : "Ruleta") : "",
     manyChatNotificado: latest?.manyChatNotified ?? false,
     easyBrokerConfirmado: latest?.easyBrokerConfirmed ?? false,
+    error: lead.auditLogs[0]?.message ?? "",
   };
 }
 

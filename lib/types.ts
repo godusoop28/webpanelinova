@@ -36,4 +36,6 @@ export interface LeadView {
   metodoAsignacion: string;
   manyChatNotificado: boolean;
   easyBrokerConfirmado: boolean;
+  /** Mensaje del AuditLog de error más reciente, o "" si el lead no falló. */
+  error: string;
 }

@@ -98,11 +98,15 @@ export default async function LeadsPage({
                 <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
                   <th className="px-5 py-3 font-medium">Fecha</th>
                   <th className="px-5 py-3 font-medium">Nombre</th>
+                  <th className="px-5 py-3 font-medium">Teléfono</th>
                   <th className="px-5 py-3 font-medium">Interés</th>
                   <th className="px-5 py-3 font-medium">Origen</th>
+                  <th className="px-5 py-3 font-medium">Propiedad</th>
                   <th className="px-5 py-3 font-medium">Asesor</th>
                   <th className="px-5 py-3 font-medium">Estado</th>
+                  <th className="px-5 py-3 font-medium">EasyBroker</th>
                   <th className="px-5 py-3 font-medium">Notificación</th>
+                  <th className="px-5 py-3 font-medium">Error</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
@@ -117,16 +121,32 @@ export default async function LeadsPage({
                         {lead.nombre || "—"}
                       </Link>
                     </td>
+                    <td data-label="Teléfono" className="whitespace-nowrap px-5 py-3 text-ink-600">{lead.telefono || "—"}</td>
                     <td data-label="Interés" className="px-5 py-3 text-ink-600">{lead.tipoInteres || "—"}</td>
                     <td data-label="Origen" className="px-5 py-3 text-ink-600">{lead.origen || "—"}</td>
+                    <td data-label="Propiedad" className="px-5 py-3 text-ink-600">{lead.datoEnviado || "—"}</td>
                     <td data-label="Asesor" className="px-5 py-3 text-ink-600">{lead.asesorAsignado || "Sin asignar"}</td>
                     <td data-label="Estado" className="px-5 py-3">
                       <Badge tone={statusTone(lead.estado)}>{lead.estado}</Badge>
+                    </td>
+                    <td data-label="EasyBroker" className="px-5 py-3">
+                      <Badge tone={lead.easyBrokerConfirmado ? "success" : "warning"}>
+                        {lead.easyBrokerConfirmado ? "Confirmado" : "Pendiente"}
+                      </Badge>
                     </td>
                     <td data-label="Notificación" className="px-5 py-3">
                       <Badge tone={lead.manyChatNotificado ? "success" : "warning"}>
                         {lead.manyChatNotificado ? "Enviada" : "Pendiente"}
                       </Badge>
+                    </td>
+                    <td data-label="Error" className="px-5 py-3 text-ink-600">
+                      {lead.error ? (
+                        <span className="text-rose-700" title={lead.error}>
+                          {lead.error.length > 60 ? `${lead.error.slice(0, 60)}…` : lead.error}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-5 py-3 text-left md:text-right">
                       {lead.linkWhatsappCliente && (

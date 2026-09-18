@@ -2,6 +2,8 @@ import "server-only";
 import type { Advisor, AssignmentMethod, Lead, LeadInterestType } from "@prisma/client";
 import { env, isLiveAutomation } from "@/lib/env";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { classifyInterest } from "@/lib/interest-classification";
+import { extractCampaignPropertyCode } from "@/lib/campaign-code";
 import { createLead, updateLead } from "@/lib/repositories/lead.repository";
 import { findAdvisorByEasyBrokerEmail } from "@/lib/repositories/advisor.repository";
 import {
@@ -24,10 +26,6 @@ import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository
 import { enqueueEasyBrokerCreate, enqueueEasyBrokerAssign, enqueueManyChatFlow } from "@/lib/services/retry.service";
 
 const MANYCHAT_SOURCE = "WhatsApp ManyChat";
-// Matches EasyBroker's Make scenario pattern (?<codigo>EB-[A-Za-z0-9-]+) —
-// no named group here since tsconfig targets ES2017 (Fase 42: keep the
-// diff minimal, don't bump the project-wide build target for this).
-const CAMPAIGN_PROPERTY_CODE_PATTERN = /EB-[A-Za-z0-9-]+/;
 
 export interface IncomingLeadInput {
   nombre: string;
@@ -37,43 +35,11 @@ export interface IncomingLeadInput {
   origen?: string;
   subscriberId?: string;
   requestId?: string;
+  tituloPropiedad?: string;
+  urlPropiedad?: string;
 }
 
-interface RouteClassification {
-  interestType: LeadInterestType;
-  routeLabel: string;
-  assignmentRoute: AssignmentRoute;
-}
-
-/**
- * Classifies the free-text `interes_cliente` ManyChat/Make already sends
- * into our controlled types. Kept liberal (substring match) on purpose —
- * the chat flow's exact wording has drifted before and will again; a
- * strict enum here would silently misroute leads instead of failing loudly.
- */
-function classifyInterest(raw: string): RouteClassification {
-  const normalized = raw.trim().toLowerCase();
-  if (normalized.includes("propiedad")) {
-    return { interestType: "PROPERTY", routeLabel: "Vi una propiedad", assignmentRoute: "PROPERTY" };
-  }
-  if (normalized.includes("campa")) {
-    return { interestType: "CAMPAIGN", routeLabel: "Campaña propiedad", assignmentRoute: "CAMPAIGN" };
-  }
-  if (normalized.includes("timeout")) {
-    return { interestType: "TIMEOUT", routeLabel: "Timeout", assignmentRoute: "TIMEOUT" };
-  }
-  if (normalized.includes("sin respuesta")) {
-    return { interestType: "NO_RESPONSE", routeLabel: "Explorar opciones", assignmentRoute: "EXPLORE" };
-  }
-  if (normalized.includes("explor")) {
-    return { interestType: "EXPLORE", routeLabel: "Explorar opciones", assignmentRoute: "EXPLORE" };
-  }
-  return { interestType: "OTHER", routeLabel: "Explorar opciones", assignmentRoute: "EXPLORE" };
-}
-
-export function extractCampaignPropertyCode(text: string): string | null {
-  return CAMPAIGN_PROPERTY_CODE_PATTERN.exec(text)?.[0] ?? null;
-}
+export { extractCampaignPropertyCode };
 
 export interface ProcessLeadResult {
   mode: "shadow" | "live";
