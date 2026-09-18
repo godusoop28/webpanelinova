@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/state";
 
 function formatDate(value: Date): string {
   return value.toLocaleString("es-MX", {
+    timeZone: "America/Mexico_City",
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",

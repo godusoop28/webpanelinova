@@ -13,7 +13,7 @@ import { LeadActionsPanel } from "@/components/leads/lead-actions-panel";
 function formatDateTime(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("es-MX", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return date.toLocaleString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function statusTone(status: string): "success" | "warning" | "danger" | "neutral" {

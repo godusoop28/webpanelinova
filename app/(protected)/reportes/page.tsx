@@ -34,7 +34,7 @@ export default async function ReportesPage({
     const buckets = new Map<string, number>();
     for (const lead of inRange) {
       const date = new Date(lead.fechaHora);
-      const key = date.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit" });
+      const key = date.toLocaleDateString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit" });
       buckets.set(key, (buckets.get(key) ?? 0) + 1);
     }
     return Array.from(buckets.entries()).map(([date, total]) => ({ date, total }));
