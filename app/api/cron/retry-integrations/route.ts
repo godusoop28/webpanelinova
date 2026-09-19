@@ -5,11 +5,16 @@ import { processDueIntegrationJobs } from "@/lib/services/retry.service";
 
 /**
  * Fase 20: picks up EasyBroker/ManyChat calls that failed and retries them
- * with backoff (1min, 5min, 15min, 1h). Point Vercel Cron (or any scheduler)
- * here with the header below — GET so it works from a plain cron trigger.
+ * with backoff (1min, 5min, 15min, 1h). See vercel.json for the schedule —
+ * Vercel Cron invokes this automatically and, when the project's env var is
+ * named exactly CRON_SECRET, injects it itself as "Authorization: Bearer
+ * <value>" (no secret embedded in vercel.json). "x-cron-secret" / "?secret="
+ * stay supported for any other scheduler (cron-job.org, etc.).
  */
 function checkCronSecret(request: NextRequest): NextResponse | null {
-  const provided = request.headers.get("x-cron-secret") ?? request.nextUrl.searchParams.get("secret");
+  const authHeader = request.headers.get("authorization");
+  const bearerToken = authHeader?.toLowerCase().startsWith("bearer ") ? authHeader.slice(7) : undefined;
+  const provided = bearerToken ?? request.headers.get("x-cron-secret") ?? request.nextUrl.searchParams.get("secret");
   let expected: string;
   try {
     expected = env.cron.secret;

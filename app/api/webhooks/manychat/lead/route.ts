@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { checkIntegrationSecret } from "@/lib/api-auth";
 import { IncomingLeadWebhookSchema } from "@/lib/schemas";
 import { isDatabaseConfigured } from "@/lib/db";
@@ -97,6 +98,29 @@ export async function POST(request: NextRequest) {
     await markWebhookEventProcessed(webhookEventId);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
+    // Two webhook deliveries for the same requestId arriving concurrently
+    // both pass the isDuplicateLead pre-check above before either has
+    // written its Lead row — the loser hits Lead.requestId's unique
+    // constraint here instead. Treat it the same as the pre-check duplicate
+    // path rather than a real failure: no second Lead/assignment/EasyBroker
+    // call ever happens, so ManyChat should see "duplicate", not a 500.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      (error.meta?.target as string[] | undefined)?.includes("requestId")
+    ) {
+      const existing = await findLeadByRequestId(requestId);
+      await logAuditEvent({
+        companyId,
+        leadId: existing?.id,
+        eventType: "LEAD_DUPLICATE_SKIPPED",
+        status: "skipped",
+        message: `Webhook concurrente para requestId ${requestId}; ya existía un lead con este requestId.`,
+      });
+      await markWebhookEventProcessed(webhookEventId);
+      return NextResponse.json({ ok: true, duplicate: true, leadId: existing?.id ?? null, status: existing?.status ?? null });
+    }
+
     const message = error instanceof Error ? error.message : "Error desconocido";
     await markWebhookEventProcessed(webhookEventId, message);
     return NextResponse.json({ ok: false, error: { code: "INTERNAL_ERROR", message } }, { status: 500 });
