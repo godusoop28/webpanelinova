@@ -1,129 +1,187 @@
+import { Download, FileSpreadsheet } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
-import { listLeadReportRows } from "@/lib/services/lead-view.service";
-import { resolveDateRange, type DateRangePreset } from "@/lib/metrics";
+import { listLeadRows } from "@/lib/services/lead-view.service";
+import { listAdvisorViews } from "@/lib/services/advisor.service";
+import { getReportData, canonicalRouteToInterestTypes, type CanonicalRoute } from "@/lib/reporting/report-data";
+import { resolveDateRange, presetFromSearchParams, InvalidDateRangeError } from "@/lib/reporting/date-range";
 import { DateRangeFilter } from "@/components/date-range-filter";
-import { LeadsByDayChart, LeadsByOriginChart } from "@/components/dashboard/charts";
-import { Card } from "@/components/ui/card";
-import { EmptyState, ErrorState } from "@/components/ui/state";
-import { Badge } from "@/components/ui/badge";
+import { SummaryCards } from "@/components/reports/summary-cards";
+import { BreakdownCard } from "@/components/reports/breakdown-card";
+import { AdvisorBreakdownTable } from "@/components/reports/advisor-breakdown-table";
+import { LeadFilters } from "@/components/reports/lead-filters";
+import { LeadDetailTable } from "@/components/reports/lead-detail-table";
+import { ErrorState } from "@/components/ui/state";
+
+const PAGE_SIZE = 50;
+
+interface ReportesSearchParams {
+  range?: string;
+  from?: string;
+  to?: string;
+  page?: string;
+  q?: string;
+  ruta?: string;
+  asesor?: string;
+  estado?: string;
+  origen?: string;
+}
 
 export default async function ReportesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+  searchParams: Promise<ReportesSearchParams>;
 }) {
   const user = await requireSection("reportes");
   const params = await searchParams;
-  const preset = (params.range as DateRangePreset) ?? "last_30_days";
-  const range = resolveDateRange(
-    preset,
-    params.from && params.to ? { from: params.from, to: params.to } : undefined
-  );
+  const { preset, custom } = presetFromSearchParams(params);
 
-  let inRange: Awaited<ReturnType<typeof listLeadReportRows>> = [];
-  let loadError: string | null = null;
+  let range: ReturnType<typeof resolveDateRange> | null = null;
+  let rangeError: string | null = null;
   try {
-    const companyId = await getDefaultCompanyId();
-    inRange = await listLeadReportRows(companyId, range.from, range.to);
+    range = resolveDateRange(preset, custom);
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "Error desconocido";
+    rangeError = error instanceof InvalidDateRangeError ? error.message : "Rango de fechas inválido.";
   }
 
-  const chartByDay = (() => {
-    const buckets = new Map<string, number>();
-    for (const lead of inRange) {
-      const date = new Date(lead.fechaHora);
-      const key = date.toLocaleDateString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit" });
-      buckets.set(key, (buckets.get(key) ?? 0) + 1);
-    }
-    return Array.from(buckets.entries()).map(([date, total]) => ({ date, total }));
-  })();
+  const page = Math.max(1, Number(params.page) || 1);
 
-  const chartByOrigin = (() => {
-    const buckets = new Map<string, number>();
-    for (const lead of inRange) {
-      const key = lead.origen || "Sin especificar";
-      buckets.set(key, (buckets.get(key) ?? 0) + 1);
-    }
-    return Array.from(buckets.entries()).map(([name, value]) => ({ name, value }));
-  })();
+  let loadError: string | null = null;
+  let report: Awaited<ReturnType<typeof getReportData>> | null = null;
+  let leadsPage: Awaited<ReturnType<typeof listLeadRows>> | null = null;
+  let advisors: Awaited<ReturnType<typeof listAdvisorViews>> = [];
 
-  const byAdvisor = (() => {
-    const buckets = new Map<string, { total: number; enviadas: number; pendientes: number; error: number }>();
-    for (const lead of inRange) {
-      const key = lead.asesorAsignado || "Sin asignar";
-      const bucket = buckets.get(key) ?? { total: 0, enviadas: 0, pendientes: 0, error: 0 };
-      bucket.total += 1;
-      if (lead.estadoEnvio === "error") bucket.error += 1;
-      else if (lead.estadoEnvio === "pendiente") bucket.pendientes += 1;
-      else bucket.enviadas += 1;
-      buckets.set(key, bucket);
+  if (range) {
+    try {
+      const companyId = await getDefaultCompanyId();
+      const [reportResult, advisorsResult, leadsResult] = await Promise.all([
+        getReportData({ companyId, startDate: range.startDate, endDate: range.endDate }),
+        listAdvisorViews(companyId),
+        listLeadRows(
+          {
+            companyId,
+            from: range.startDate,
+            to: range.endDate,
+            search: params.q,
+            status: params.estado,
+            advisorId: params.asesor,
+            interestType: params.ruta ? canonicalRouteToInterestTypes(params.ruta as CanonicalRoute) : undefined,
+            origin: params.origen,
+          },
+          page,
+          PAGE_SIZE
+        ),
+      ]);
+      report = reportResult;
+      advisors = advisorsResult;
+      leadsPage = leadsResult;
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : "Error desconocido";
     }
-    return Array.from(buckets.entries())
-      .map(([advisor, stats]) => ({ advisor, ...stats }))
-      .sort((a, b) => b.total - a.total);
-  })();
+  }
+
+  const pdfParams = new URLSearchParams();
+  if (range) {
+    pdfParams.set("range", preset);
+    if (preset === "custom" && custom) {
+      pdfParams.set("from", custom.from);
+      pdfParams.set("to", custom.to);
+    }
+  }
+
+  function pageHref(targetPage: number): string {
+    const p = new URLSearchParams();
+    if (params.range) p.set("range", params.range);
+    if (params.from) p.set("from", params.from);
+    if (params.to) p.set("to", params.to);
+    if (params.q) p.set("q", params.q);
+    if (params.ruta) p.set("ruta", params.ruta);
+    if (params.asesor) p.set("asesor", params.asesor);
+    if (params.estado) p.set("estado", params.estado);
+    if (params.origen) p.set("origen", params.origen);
+    p.set("page", String(targetPage));
+    return `/reportes?${p.toString()}`;
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-ink-900">Reportes</h1>
           <p className="text-sm text-ink-500">
-            {user.role === "CONSULTA"
-              ? "Modo de solo lectura."
-              : "Desempeño de leads por periodo y por asesor."}
+            Consulta el desempeño de los leads por periodo, origen, ruta y asesor.
+            {user.role === "CONSULTA" && " Modo de solo lectura."}
           </p>
         </div>
-        <DateRangeFilter current={preset} />
+        <div className="flex flex-col items-start gap-3 lg:items-end">
+          <DateRangeFilter current={preset} />
+          {range && (
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={`/api/reports/pdf?${pdfParams.toString()}`}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-ink-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-ink-800"
+              >
+                <Download className="size-3.5" aria-hidden />
+                Descargar PDF
+              </a>
+              <a
+                href={`/api/reports/csv?${pdfParams.toString()}`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-surface-muted"
+              >
+                <FileSpreadsheet className="size-3.5" aria-hidden />
+                Exportar CSV
+              </a>
+            </div>
+          )}
+        </div>
       </div>
 
-      {loadError ? (
+      {rangeError ? (
+        <ErrorState title="Rango de fechas inválido" description={rangeError} />
+      ) : loadError ? (
         <ErrorState title="No se pudieron cargar los reportes" description={loadError} />
-      ) : inRange.length === 0 ? (
-        <EmptyState title="Sin datos en el periodo seleccionado" />
-      ) : (
+      ) : report && leadsPage ? (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <LeadsByDayChart data={chartByDay} />
-            <LeadsByOriginChart data={chartByOrigin} />
+          <p className="text-xs text-ink-400">
+            Periodo: <span className="font-medium text-ink-600">{range!.label}</span>
+          </p>
+
+          <SummaryCards summary={report.summary} />
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <BreakdownCard
+              title="Distribución por ruta"
+              columnLabel="Ruta"
+              rows={report.byRoute.map((r) => ({ label: r.label, count: r.count, percent: r.percent }))}
+            />
+            <BreakdownCard
+              title="Distribución por origen"
+              columnLabel="Origen"
+              rows={report.byOrigin.map((r) => ({ label: r.origin, count: r.count, percent: r.percent }))}
+            />
           </div>
 
-          <Card>
-            <div className="md:overflow-x-auto">
-              <table className="responsive-table w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
-                    <th className="px-5 py-3 font-medium">Asesor</th>
-                    <th className="px-5 py-3 font-medium">Leads recibidos</th>
-                    <th className="px-5 py-3 font-medium">Notificados</th>
-                    <th className="px-5 py-3 font-medium">Pendientes</th>
-                    <th className="px-5 py-3 font-medium">Con error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byAdvisor.map((row) => (
-                    <tr key={row.advisor} className="border-b border-ink-50 last:border-0 hover:bg-surface-muted">
-                      <td data-label="Asesor" className="px-5 py-3 font-medium text-ink-900">{row.advisor}</td>
-                      <td data-label="Leads recibidos" className="px-5 py-3 text-ink-600">{row.total}</td>
-                      <td data-label="Notificados" className="px-5 py-3">
-                        <Badge tone="success">{row.enviadas}</Badge>
-                      </td>
-                      <td data-label="Pendientes" className="px-5 py-3">
-                        <Badge tone="warning">{row.pendientes}</Badge>
-                      </td>
-                      <td data-label="Con error" className="px-5 py-3">
-                        <Badge tone="danger">{row.error}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          <div>
+            <h2 className="mb-3 text-sm font-semibold text-ink-900">Distribución por asesor</h2>
+            <AdvisorBreakdownTable rows={report.byAdvisor} />
+          </div>
+
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-ink-900">Detalle de leads del periodo</h2>
+            <LeadFilters
+              advisors={advisors.filter((a) => a.activo).map((a) => ({ id: a.id, name: a.nombre }))}
+              origins={report.byOrigin.map((o) => o.origin).filter((o) => o !== "Sin especificar")}
+            />
+            <LeadDetailTable
+              leads={leadsPage.leads}
+              page={leadsPage.page}
+              totalPages={Math.max(1, Math.ceil(leadsPage.total / leadsPage.limit))}
+              total={leadsPage.total}
+              pageHref={pageHref}
+            />
+          </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }

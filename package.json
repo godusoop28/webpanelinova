@@ -17,6 +17,7 @@
     "@neondatabase/serverless": "^1.1.0",
     "@prisma/adapter-neon": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "@react-pdf/renderer": "^4.9.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -27,7 +28,6 @@
     "prisma": "^7.10.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "recharts": "^3.10.1",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"

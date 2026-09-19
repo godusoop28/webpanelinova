@@ -1,41 +1,18 @@
-import {
-  AlertCircle,
-  CheckCircle2,
-  Compass,
-  Dices,
-  Home,
-  Megaphone,
-  ShieldCheck,
-  Users,
-  UserSquare2,
-} from "lucide-react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
-import { listAdvisorViews } from "@/lib/services/advisor.service";
-import { listLeadMetricsRows } from "@/lib/services/lead-view.service";
-import {
-  computeLeadMetrics,
-  percentChange,
-  previousPeriod,
-  resolveDateRange,
-  type DateRangePreset,
-} from "@/lib/metrics";
+import { listLeadRows } from "@/lib/services/lead-view.service";
+import { getReportData } from "@/lib/reporting/report-data";
+import { resolveDateRange, presetFromSearchParams, InvalidDateRangeError } from "@/lib/reporting/date-range";
 import { DateRangeFilter } from "@/components/date-range-filter";
-import { KpiCard, type KpiStatus } from "@/components/ui/kpi-card";
-import { LeadsByDayChart, LeadsByOriginChart } from "@/components/dashboard/charts";
+import { SummaryCards } from "@/components/reports/summary-cards";
+import { BreakdownCard } from "@/components/reports/breakdown-card";
+import { RecentLeadsTable } from "@/components/reports/recent-leads-table";
+import { ErrorState } from "@/components/ui/state";
 
-async function settle<T>(promise: Promise<T>): Promise<
-  { status: "ready"; value: T } | { status: "error"; error: string }
-> {
-  try {
-    return { status: "ready", value: await promise };
-  } catch (error) {
-    return {
-      status: "error",
-      error: error instanceof Error ? error.message : "Error desconocido",
-    };
-  }
-}
+const RECENT_LEADS_LIMIT = 8;
+const TOP_ADVISORS_LIMIT = 5;
 
 export default async function DashboardPage({
   searchParams,
@@ -44,65 +21,37 @@ export default async function DashboardPage({
 }) {
   await requireSection("dashboard");
   const params = await searchParams;
-  const preset = (params.range as DateRangePreset) ?? "last_30_days";
-  const range = resolveDateRange(
-    preset,
-    params.from && params.to ? { from: params.from, to: params.to } : undefined
-  );
-  const previous = previousPeriod(range);
+  const { preset, custom } = presetFromSearchParams(params);
 
-  // The metrics window needs to cover both the current and the comparison period in one fetch.
-  const widestFrom = previous.from < range.from ? previous.from : range.from;
-  const widestTo = previous.to > range.to ? previous.to : range.to;
-  const companyId = await getDefaultCompanyId();
+  let range: ReturnType<typeof resolveDateRange> | null = null;
+  let rangeError: string | null = null;
+  try {
+    range = resolveDateRange(preset, custom);
+  } catch (error) {
+    rangeError = error instanceof InvalidDateRangeError ? error.message : "Rango de fechas inválido.";
+  }
 
-  const [leadsResult, advisorsResult] = await Promise.all([
-    settle(listLeadMetricsRows(companyId, widestFrom, widestTo)),
-    settle(listAdvisorViews(companyId)),
-  ]);
+  let loadError: string | null = null;
+  let report: Awaited<ReturnType<typeof getReportData>> | null = null;
+  let recentLeads: Awaited<ReturnType<typeof listLeadRows>>["leads"] = [];
 
-  const currentMetrics =
-    leadsResult.status === "ready" ? computeLeadMetrics(leadsResult.value, range) : null;
-  const previousMetrics =
-    leadsResult.status === "ready" ? computeLeadMetrics(leadsResult.value, previous) : null;
-
-  const leadStatus: KpiStatus =
-    leadsResult.status === "error"
-      ? "error"
-      : currentMetrics && currentMetrics.totalSolicitudes === 0
-        ? "empty"
-        : "ready";
-
-  const advisorsActive =
-    advisorsResult.status === "ready"
-      ? advisorsResult.value.filter((a) => a.activo).length
-      : null;
-
-  const chartByDay = (() => {
-    if (leadsResult.status !== "ready") return [];
-    const buckets = new Map<string, number>();
-    for (const lead of leadsResult.value) {
-      const date = new Date(lead.fechaHora);
-      if (Number.isNaN(date.getTime())) continue;
-      if (date < range.from || date > range.to) continue;
-      const key = date.toLocaleDateString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit" });
-      buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  if (range) {
+    try {
+      const companyId = await getDefaultCompanyId();
+      const [reportResult, leadsResult] = await Promise.all([
+        getReportData({ companyId, startDate: range.startDate, endDate: range.endDate }),
+        listLeadRows({ companyId, from: range.startDate, to: range.endDate }, 1, RECENT_LEADS_LIMIT),
+      ]);
+      report = reportResult;
+      recentLeads = leadsResult.leads;
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : "Error desconocido";
     }
-    return Array.from(buckets.entries()).map(([date, total]) => ({ date, total }));
-  })();
+  }
 
-  const chartByOrigin = (() => {
-    if (leadsResult.status !== "ready") return [];
-    const buckets = new Map<string, number>();
-    for (const lead of leadsResult.value) {
-      const date = new Date(lead.fechaHora);
-      if (Number.isNaN(date.getTime())) continue;
-      if (date < range.from || date > range.to) continue;
-      const key = lead.origen || "Sin especificar";
-      buckets.set(key, (buckets.get(key) ?? 0) + 1);
-    }
-    return Array.from(buckets.entries()).map(([name, value]) => ({ name, value }));
-  })();
+  const reportHref = `/reportes?${new URLSearchParams(
+    preset === "custom" && custom ? { range: preset, from: custom.from, to: custom.to } : { range: preset }
+  ).toString()}`;
 
   return (
     <div className="space-y-6">
@@ -114,83 +63,49 @@ export default async function DashboardPage({
         <DateRangeFilter current={preset} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
-        <KpiCard
-          label="Personas únicas atendidas"
-          icon={Users}
-          status={leadStatus}
-          value={currentMetrics?.personasUnicas}
-          changePercent={
-            currentMetrics && previousMetrics
-              ? percentChange(currentMetrics.personasUnicas, previousMetrics.personasUnicas)
-              : undefined
-          }
-        />
-        <KpiCard
-          label="Total de solicitudes"
-          icon={CheckCircle2}
-          status={leadStatus}
-          value={currentMetrics?.totalSolicitudes}
-          changePercent={
-            currentMetrics && previousMetrics
-              ? percentChange(currentMetrics.totalSolicitudes, previousMetrics.totalSolicitudes)
-              : undefined
-          }
-        />
-        <KpiCard
-          label="Leads de campaña"
-          icon={Megaphone}
-          status={leadStatus}
-          value={currentMetrics?.leadsCampana}
-        />
-        <KpiCard
-          label="Leads de propiedad"
-          icon={Home}
-          status={leadStatus}
-          value={currentMetrics?.leadsPropiedad}
-        />
-        <KpiCard
-          label="Leads de exploración"
-          icon={Compass}
-          status={leadStatus}
-          value={currentMetrics?.leadsExploracion}
-        />
-        <KpiCard
-          label="Asesores activos"
-          icon={UserSquare2}
-          status={advisorsResult.status === "error" ? "error" : "ready"}
-          value={advisorsActive ?? undefined}
-        />
-        <KpiCard
-          label="Asignaciones exclusivas"
-          icon={ShieldCheck}
-          status={leadStatus}
-          value={currentMetrics?.asignacionesExclusivas}
-        />
-        <KpiCard
-          label="Asignaciones por ruleta"
-          icon={Dices}
-          status={leadStatus}
-          value={currentMetrics?.asignacionesRuleta}
-        />
-        <KpiCard
-          label="Notificaciones pendientes"
-          icon={AlertCircle}
-          status={leadStatus}
-          value={currentMetrics?.notificacionesPendientes}
-        />
-        <KpiCard
-          label="Notificaciones con error"
-          icon={AlertCircle}
-          status={leadStatus}
-          value={currentMetrics?.notificacionesConError}
-        />
-      </div>
+      {rangeError ? (
+        <ErrorState title="Rango de fechas inválido" description={rangeError} />
+      ) : loadError ? (
+        <ErrorState title="No se pudieron cargar los indicadores" description={loadError} />
+      ) : report ? (
+        <>
+          <p className="text-xs text-ink-400">
+            Periodo: <span className="font-medium text-ink-600">{range!.label}</span>
+          </p>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <LeadsByDayChart data={chartByDay} />
-        <LeadsByOriginChart data={chartByOrigin} />
-      </div>
+          <SummaryCards summary={report.summary} />
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <BreakdownCard
+              title="Desglose por ruta"
+              columnLabel="Ruta"
+              rows={report.byRoute.map((r) => ({ label: r.label, count: r.count, percent: r.percent }))}
+            />
+            <BreakdownCard
+              title="Top asesores"
+              columnLabel="Asesor"
+              rows={report.byAdvisor
+                .slice(0, TOP_ADVISORS_LIMIT)
+                .map((a) => ({ label: a.advisorName, count: a.total, percent: a.percent }))}
+              emptyLabel="Sin asignaciones en el periodo"
+            />
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-ink-900">Últimos leads</h2>
+              <Link
+                href={reportHref}
+                className="inline-flex items-center gap-1 text-xs font-medium text-gold-700 hover:text-gold-600"
+              >
+                Ver reporte completo
+                <ArrowRight className="size-3.5" aria-hidden />
+              </Link>
+            </div>
+            <RecentLeadsTable leads={recentLeads} />
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

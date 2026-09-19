@@ -208,6 +208,8 @@ model Lead {
   @@index([status])
   @@index([companyId])
   @@index([assignedAdvisorId])
+  /** Every report/dashboard query filters by companyId + a createdAt range — this is the one that matters for multi-month reports. */
+  @@index([companyId, createdAt])
   @@map("leads")
 }
 

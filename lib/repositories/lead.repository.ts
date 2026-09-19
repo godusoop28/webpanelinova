@@ -6,7 +6,7 @@ export interface LeadFilters {
   companyId: string;
   status?: string;
   advisorId?: string;
-  interestType?: string;
+  interestType?: string | string[];
   origin?: string;
   from?: Date;
   to?: Date;
@@ -24,7 +24,11 @@ function buildWhere(filters: LeadFilters): Prisma.LeadWhereInput {
   const where: Prisma.LeadWhereInput = { companyId: filters.companyId };
   if (filters.status) where.status = filters.status as Prisma.EnumLeadStatusFilter["equals"];
   if (filters.advisorId) where.assignedAdvisorId = filters.advisorId;
-  if (filters.interestType) where.interestType = filters.interestType as Prisma.EnumLeadInterestTypeFilter["equals"];
+  if (filters.interestType) {
+    where.interestType = Array.isArray(filters.interestType)
+      ? { in: filters.interestType as Prisma.EnumLeadInterestTypeFilter["in"] }
+      : (filters.interestType as Prisma.EnumLeadInterestTypeFilter["equals"]);
+  }
   if (filters.origin) where.origin = { contains: filters.origin, mode: "insensitive" };
   if (filters.from || filters.to) {
     where.createdAt = {

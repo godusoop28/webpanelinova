@@ -133,7 +133,7 @@ export const DateRangePresetSchema = z.enum([
   "today",
   "this_week",
   "last_week",
-  "last_30_days",
   "this_month",
+  "last_month",
   "custom",
 ]);

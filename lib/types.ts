@@ -26,6 +26,8 @@ export interface LeadView {
   nombre: string;
   telefono: string;
   tipoInteres: string;
+  /** Enum crudo de Prisma (PROPERTY/EXPLORE/CAMPAIGN/TIMEOUT/NO_RESPONSE/OTHER) — usar lib/reporting/report-aggregation.ts#toCanonicalRoute + ROUTE_LABELS para mostrarlo al usuario. */
+  interestType: string;
   datoEnviado: string;
   origen: string;
   ruta: string;
