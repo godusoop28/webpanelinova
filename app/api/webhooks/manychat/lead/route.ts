@@ -9,6 +9,7 @@ import { buildLeadFingerprint, recordWebhookDelivery, markWebhookEventProcessed 
 import { processIncomingLead } from "@/lib/services/lead.service";
 import { findLeadByRequestId } from "@/lib/repositories/lead.repository";
 import { logAuditEvent } from "@/lib/services/audit.service";
+import { parseLenientJson } from "@/lib/lenient-json";
 
 /**
  * Real-time lead intake from ManyChat. Accepts nombre, telefono_cliente,
@@ -29,15 +30,32 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Not request.json(): ManyChat pastes {Last Text Input} into the body raw,
+  // so a campaign message with a line break arrives as invalid JSON.
+  const rawBody = await request.text();
   let body: unknown;
   try {
-    body = await request.json();
+    body = parseLenientJson(rawBody);
   } catch {
+    await logAuditEvent({
+      companyId: await getDefaultCompanyId(),
+      eventType: "WEBHOOK_REJECTED",
+      status: "error",
+      message: "Webhook de lead rechazado: cuerpo JSON inválido.",
+      metadata: { rawBody: rawBody.slice(0, 2000) },
+    });
     return NextResponse.json({ ok: false, error: { code: "INVALID_BODY", message: "Cuerpo JSON inválido." } }, { status: 400 });
   }
 
   const parsed = IncomingLeadWebhookSchema.safeParse(body);
   if (!parsed.success) {
+    await logAuditEvent({
+      companyId: await getDefaultCompanyId(),
+      eventType: "WEBHOOK_REJECTED",
+      status: "error",
+      message: "Webhook de lead rechazado: payload inválido.",
+      metadata: { issues: parsed.error.issues, rawBody: rawBody.slice(0, 2000) },
+    });
     return NextResponse.json(
       { ok: false, error: { code: "INVALID_BODY", message: "Payload inválido.", issues: parsed.error.issues } },
       { status: 422 }
