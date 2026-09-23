@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { AiPropertySearchResponseSchema, verifyAiOptions } from "@/lib/property-search-schema";
+import { AiPropertySearchResponseSchema, verifyAiOptions, keywordMatchProperties } from "@/lib/property-search-schema";
 
 describe("AiPropertySearchResponseSchema", () => {
   it("accepts a well-formed response", () => {
@@ -76,5 +76,27 @@ describe("verifyAiOptions — never trust an AI-invented id blindly (Fase 24)", 
   it("uses the candidate's real title, ignoring whatever title the AI proposed", () => {
     const result = verifyAiOptions([{ id: "EB-1" }], candidates);
     expect(result[0].titulo).toBe("Casa Real");
+  });
+});
+
+describe("keywordMatchProperties", () => {
+  const candidates = [
+    { public_id: "EB-1", title: "Casa frente al Lago de Chapala | El Encanto, San Antonio Tlayacapan", location: "Chapala, Jalisco" },
+    { public_id: "EB-2", title: "Depa en Andares", location: "Zapopan, Jalisco" },
+    { public_id: "EB-3", title: "Terreno en venta", location: "San Antonio Tlayacapan, Chapala" },
+  ];
+
+  it("ranks title matches above location matches, ignoring accents and punctuation", () => {
+    const result = keywordMatchProperties("Casa en. San Antonio Tlayacapán", candidates);
+    expect(result.map((o) => o.id)).toEqual(["EB-1", "EB-3"]);
+  });
+
+  it("matches on location", () => {
+    expect(keywordMatchProperties("algo en zapopan", candidates).map((o) => o.id)).toEqual(["EB-2"]);
+  });
+
+  it("returns nothing when no word matches or the query is only stopwords", () => {
+    expect(keywordMatchProperties("oficina en monterrey", candidates)).toEqual([]);
+    expect(keywordMatchProperties("quiero una de las", candidates)).toEqual([]);
   });
 });

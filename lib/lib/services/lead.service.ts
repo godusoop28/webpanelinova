@@ -20,7 +20,11 @@ import {
   EasyBrokerApiError,
   type EasyBrokerProperty,
 } from "@/lib/services/easybroker.service";
-import { notifyAdvisor, ManyChatApiError } from "@/lib/services/manychat.service";
+import {
+  notifyAdvisor,
+  buildAdvisorLeadCustomFields,
+  ManyChatApiError,
+} from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository";
 import { enqueueEasyBrokerCreate, enqueueEasyBrokerAssign, enqueueManyChatFlow } from "@/lib/services/retry.service";
@@ -412,10 +416,36 @@ export async function processIncomingLead(
 
   await updateAssignmentStatus(assignment.id, { status: confirmed ? "CONFIRMED" : "ASSIGNED", easyBrokerConfirmed: confirmed });
 
+  // IMPORTANT: the advisor notification Flow reads Custom User Fields from
+  // the ADVISOR contact itself. They must be overwritten with this exact
+  // lead immediately before sendFlow, otherwise ManyChat reuses the previous
+  // lead's values (the production campaign bug reported by the client).
+  const advisorLeadFields = buildAdvisorLeadCustomFields({
+    name: input.nombre,
+    phone,
+    requestType: assignmentRoute === "CAMPAIGN" ? "Campaña" : input.interesCliente,
+    reference:
+      assignmentRoute === "CAMPAIGN"
+        ? "Campaña propiedad"
+        : input.tituloPropiedad?.trim() || property?.title || input.datosPropiedad?.trim() || routeLabel,
+    relatedInfo: property
+      ? [
+          `Propiedad: ${property.title}`,
+          `Clave: ${property.public_id}`,
+          input.urlPropiedad?.trim() || property.public_url?.trim() || "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : input.datosPropiedad?.trim() || input.tituloPropiedad?.trim() || "Sin información adicional",
+  });
+
   let notified = false;
   if (advisor.manyChatSubscriberId) {
     try {
-      await notifyAdvisor({ advisorManyChatSubscriberId: advisor.manyChatSubscriberId });
+      await notifyAdvisor({
+        advisorManyChatSubscriberId: advisor.manyChatSubscriberId,
+        customFields: advisorLeadFields,
+      });
       notified = true;
       actions.push("notified_manychat");
       await logAuditEvent({
@@ -424,7 +454,14 @@ export async function processIncomingLead(
         advisorId: advisor.id,
         eventType: "MANYCHAT_NOTIFICATION_SENT",
         status: "ok",
-        message: `Asesor ${advisor.name} notificado por ManyChat.`,
+        message: `Asesor ${advisor.name} notificado por ManyChat con los datos del lead actual.`,
+        metadata: {
+          requestId: context.requestId,
+          leadName: input.nombre,
+          leadPhone: phone,
+          interest: input.interesCliente,
+          campaign: assignmentRoute === "CAMPAIGN",
+        },
       });
     } catch (error) {
       actions.push("manychat_notification_failed");
@@ -435,10 +472,24 @@ export async function processIncomingLead(
         eventType: "MANYCHAT_NOTIFICATION_FAILED",
         status: "error",
         message: error instanceof ManyChatApiError ? error.message : error instanceof Error ? error.message : "Error desconocido",
+        metadata: {
+          requestId: context.requestId,
+          leadName: input.nombre,
+          leadPhone: phone,
+          interest: input.interesCliente,
+        },
       });
       const flowNs = env.manychat.advisorFlowId;
       if (flowNs) {
-        await enqueueManyChatFlow(companyId, lead.id, { subscriberId: advisor.manyChatSubscriberId, flowNs });
+        // Store the exact fields together with the retry. If another lead is
+        // assigned to the same advisor before the retry runs, this job first
+        // restores THIS lead's fields and only then executes the Flow.
+        await enqueueManyChatFlow(companyId, lead.id, {
+          subscriberId: advisor.manyChatSubscriberId,
+          flowNs,
+          fields: advisorLeadFields,
+          assignmentId: assignment.id,
+        });
       }
     }
   } else {

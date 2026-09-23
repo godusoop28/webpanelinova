@@ -5,6 +5,7 @@ import { openAiJsonCompletion } from "@/lib/integrations/openai.client";
 import {
   AiPropertySearchResponseSchema,
   verifyAiOptions,
+  keywordMatchProperties,
   type PropertySearchOption,
 } from "@/lib/property-search-schema";
 
@@ -15,10 +16,17 @@ import {
  */
 const DEFAULT_MAX_PAGES = 5;
 const PAGE_SIZE = 50;
+// ManyChat's External Request gives up after ~10s and then shows the client
+// an empty menu, so OpenAI must answer well inside that window.
+const AI_TIMEOUT_MS = 6000;
 
 export interface PropertySearchResult {
   resultado: "ok" | "sin_coincidencias" | "sin_resultados";
   opciones: PropertySearchOption[];
+  /** "ai" normally; "keyword" when OpenAI failed and the local matcher answered. */
+  metodo?: "ai" | "keyword";
+  /** Why the AI path was skipped, when it was. */
+  aiError?: string;
 }
 
 function buildCandidateText(properties: EasyBrokerProperty[]): string {
@@ -66,31 +74,36 @@ export async function searchProperties(
 ): Promise<PropertySearchResult> {
   const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
 
-  const pages = await Promise.all(
+  // allSettled: one failed EasyBroker page shouldn't empty the whole search.
+  const pages = await Promise.allSettled(
     Array.from({ length: maxPages }, (_, i) => listPublishedProperties(i + 1, PAGE_SIZE))
   );
-  const candidates = pages.flat();
+  const candidates = pages.flatMap((page) => (page.status === "fulfilled" ? page.value : []));
   const byId = new Map(candidates.map((p) => [p.public_id, p]));
 
   if (candidates.length === 0) {
+    const failed = pages.find((page) => page.status === "rejected");
+    if (failed) throw failed.reason;
     return { resultado: "sin_resultados", opciones: [] };
   }
 
-  const raw = await openAiJsonCompletion({
-    model: env.openai.propertySearchModel,
-    userPrompt: buildPrompt(query, buildCandidateText(candidates)),
-  });
-
   let parsed;
   try {
+    const raw = await openAiJsonCompletion({
+      model: env.openai.propertySearchModel,
+      userPrompt: buildPrompt(query, buildCandidateText(candidates)),
+      timeoutMs: AI_TIMEOUT_MS,
+    });
     parsed = AiPropertySearchResponseSchema.parse(JSON.parse(raw));
-  } catch {
-    throw new Error("[PROPERTY_SEARCH] La IA devolvió una respuesta que no cumple el schema esperado.");
+  } catch (error) {
+    const aiError = error instanceof Error ? error.message : "Error desconocido de OpenAI";
+    const opciones = keywordMatchProperties(query, candidates);
+    return { resultado: opciones.length > 0 ? "ok" : "sin_coincidencias", opciones, metodo: "keyword", aiError };
   }
 
   const verified = verifyAiOptions(parsed.opciones, byId);
   if (verified.length === 0) {
-    return { resultado: "sin_coincidencias", opciones: [] };
+    return { resultado: "sin_coincidencias", opciones: [], metodo: "ai" };
   }
 
   // Re-fetch each verified property individually for an accurate title/url
@@ -102,5 +115,5 @@ export async function searchProperties(
     url: details[index]?.public_url ?? option.url,
   }));
 
-  return { resultado: "ok", opciones };
+  return { resultado: "ok", opciones, metodo: "ai" };
 }
