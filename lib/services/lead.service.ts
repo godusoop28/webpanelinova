@@ -20,16 +20,48 @@ import {
   EasyBrokerApiError,
   type EasyBrokerProperty,
 } from "@/lib/services/easybroker.service";
-import {
-  notifyAdvisor,
-  buildAdvisorLeadCustomFields,
-  ManyChatApiError,
-} from "@/lib/services/manychat.service";
+import { notifyAdvisor, ManyChatApiError, type ManyChatCustomField } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository";
 import { enqueueEasyBrokerCreate, enqueueEasyBrokerAssign, enqueueManyChatFlow } from "@/lib/services/retry.service";
 
 const MANYCHAT_SOURCE = "WhatsApp ManyChat";
+
+// Campos usados por el flow de ManyChat "Aviso asesor nuevo lead".
+// Estos IDs corresponden a la cuenta actual de Century 21 Inova.
+const ADVISOR_LEAD_FIELD_IDS = {
+  name: 14780313,
+  phone: 14780314,
+  requestType: 14780316,
+  relatedInfo: 14780317,
+  reference: 14780318,
+  contactUrl: 14780319,
+} as const;
+
+function buildAdvisorLeadFields(input: {
+  name: string;
+  phone: string;
+  interest: string;
+  routeLabel: string;
+  propertyPublicId?: string;
+  property?: EasyBrokerProperty | null;
+  propertyData?: string;
+}): ManyChatCustomField[] {
+  const cleanPhone = input.phone.replace(/\D/g, "");
+  const reference = input.propertyPublicId || (input.routeLabel === "Campaña propiedad" ? "Campaña propiedad" : input.routeLabel);
+  const relatedInfo = input.property
+    ? [input.property.title, input.property.location, input.property.public_url].filter(Boolean).join("\n")
+    : input.propertyData?.trim() || "Sin información adicional";
+
+  return [
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.name, value: input.name.trim() },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.phone, value: input.phone },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.requestType, value: input.interest.trim() || input.routeLabel },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.reference, value: reference },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.relatedInfo, value: relatedInfo },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.contactUrl, value: `https://wa.me/${cleanPhone}` },
+  ];
+}
 
 export interface IncomingLeadInput {
   nombre: string;
@@ -416,32 +448,22 @@ export async function processIncomingLead(
 
   await updateAssignmentStatus(assignment.id, { status: confirmed ? "CONFIRMED" : "ASSIGNED", easyBrokerConfirmed: confirmed });
 
-  // IMPORTANT: the advisor notification Flow reads Custom User Fields from
-  // the ADVISOR contact itself. They must be overwritten with this exact
-  // lead immediately before sendFlow, otherwise ManyChat reuses the previous
-  // lead's values (the production campaign bug reported by the client).
-  const advisorLeadFields = buildAdvisorLeadCustomFields({
-    name: input.nombre,
-    phone,
-    requestType: assignmentRoute === "CAMPAIGN" ? "Campaña" : input.interesCliente,
-    reference:
-      assignmentRoute === "CAMPAIGN"
-        ? "Campaña propiedad"
-        : input.tituloPropiedad?.trim() || property?.title || input.datosPropiedad?.trim() || routeLabel,
-    relatedInfo: property
-      ? [
-          `Propiedad: ${property.title}`,
-          `Clave: ${property.public_id}`,
-          input.urlPropiedad?.trim() || property.public_url?.trim() || "",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : input.datosPropiedad?.trim() || input.tituloPropiedad?.trim() || "Sin información adicional",
-  });
-
   let notified = false;
   if (advisor.manyChatSubscriberId) {
+    const advisorLeadFields = buildAdvisorLeadFields({
+      name: input.nombre,
+      phone,
+      interest: input.interesCliente,
+      routeLabel,
+      propertyPublicId,
+      property,
+      propertyData: input.datosPropiedad,
+    });
+
     try {
+      // CRÍTICO: el flow del asesor lee Custom Fields almacenados en el
+      // contacto del asesor. Deben sobrescribirse con ESTE lead antes de
+      // disparar el flow; de lo contrario ManyChat repite el lead anterior.
       await notifyAdvisor({
         advisorManyChatSubscriberId: advisor.manyChatSubscriberId,
         customFields: advisorLeadFields,
@@ -454,14 +476,7 @@ export async function processIncomingLead(
         advisorId: advisor.id,
         eventType: "MANYCHAT_NOTIFICATION_SENT",
         status: "ok",
-        message: `Asesor ${advisor.name} notificado por ManyChat con los datos del lead actual.`,
-        metadata: {
-          requestId: context.requestId,
-          leadName: input.nombre,
-          leadPhone: phone,
-          interest: input.interesCliente,
-          campaign: assignmentRoute === "CAMPAIGN",
-        },
+        message: `Asesor ${advisor.name} notificado por ManyChat.`,
       });
     } catch (error) {
       actions.push("manychat_notification_failed");
@@ -472,23 +487,15 @@ export async function processIncomingLead(
         eventType: "MANYCHAT_NOTIFICATION_FAILED",
         status: "error",
         message: error instanceof ManyChatApiError ? error.message : error instanceof Error ? error.message : "Error desconocido",
-        metadata: {
-          requestId: context.requestId,
-          leadName: input.nombre,
-          leadPhone: phone,
-          interest: input.interesCliente,
-        },
       });
       const flowNs = env.manychat.advisorFlowId;
       if (flowNs) {
-        // Store the exact fields together with the retry. If another lead is
-        // assigned to the same advisor before the retry runs, this job first
-        // restores THIS lead's fields and only then executes the Flow.
+        // El retry también debe volver a escribir los campos antes de lanzar
+        // el flow. Nunca reintentar sólo sendFlow con valores antiguos.
         await enqueueManyChatFlow(companyId, lead.id, {
           subscriberId: advisor.manyChatSubscriberId,
           flowNs,
           fields: advisorLeadFields,
-          assignmentId: assignment.id,
         });
       }
     }

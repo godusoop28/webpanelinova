@@ -45,12 +45,7 @@ export type EasyBrokerAssignPayload = {
   assignmentId?: string;
 };
 export type ManyChatFieldsPayload = { subscriberId: string; fields: { fieldId: number; value: string }[] };
-export type ManyChatFlowPayload = {
-  subscriberId: string;
-  flowNs: string;
-  fields?: { fieldId: number; value: string }[];
-  assignmentId?: string;
-};
+export type ManyChatFlowPayload = { subscriberId: string; flowNs: string; fields?: { fieldId: number; value: string }[] };
 
 export async function enqueueEasyBrokerCreate(companyId: string, leadId: string, payload: EasyBrokerCreatePayload) {
   await createIntegrationJob({ companyId, leadId, type: "EASYBROKER_CREATE", payload });
@@ -105,19 +100,13 @@ async function runJob(job: IntegrationJob): Promise<void> {
     }
     case "MANYCHAT_FLOW": {
       const payload = job.payload as unknown as ManyChatFlowPayload;
-
-      // The Flow reads fields stored on the advisor contact. Always restore
-      // the fields for THIS job immediately before the Flow so a newer lead
-      // cannot overwrite them while this retry is waiting in the queue.
-      if (payload.fields && payload.fields.length > 0) {
+      // El flow del asesor usa Custom Fields del propio asesor. Si este job
+      // viene de una notificación fallida, reescribir primero los datos del
+      // lead actual evita que el retry mande el lead anterior.
+      if (payload.fields?.length) {
         await setCustomFields(payload.subscriberId, payload.fields);
       }
-
       await sendFlow(payload.subscriberId, payload.flowNs);
-
-      if (payload.assignmentId) {
-        await updateAssignmentStatus(payload.assignmentId, { manyChatNotified: true });
-      }
       return;
     }
   }

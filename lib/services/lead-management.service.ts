@@ -5,11 +5,7 @@ import { findAdvisorById } from "@/lib/repositories/advisor.repository";
 import { createAssignmentRecord } from "@/lib/repositories/assignment.repository";
 import { updateLead } from "@/lib/repositories/lead.repository";
 import { assignContactToAdvisor, EasyBrokerApiError } from "@/lib/services/easybroker.service";
-import {
-  notifyAdvisor,
-  buildAdvisorLeadCustomFields,
-  ManyChatApiError,
-} from "@/lib/services/manychat.service";
+import { notifyAdvisor, ManyChatApiError } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { isLiveAutomation } from "@/lib/env";
 
@@ -100,21 +96,7 @@ export async function reassignLead(
 
     if (advisor.manyChatSubscriberId) {
       try {
-        const advisorLeadFields = buildAdvisorLeadCustomFields({
-          name: lead.name,
-          phone: lead.phone,
-          requestType: lead.interestType === "CAMPAIGN" ? "Campaña" : lead.interestType,
-          reference:
-            lead.interestType === "CAMPAIGN"
-              ? "Campaña propiedad"
-              : lead.route || lead.propertyData || lead.interestType,
-          relatedInfo: lead.propertyData || "Sin información adicional",
-        });
-
-        await notifyAdvisor({
-          advisorManyChatSubscriberId: advisor.manyChatSubscriberId,
-          customFields: advisorLeadFields,
-        });
+        await notifyAdvisor({ advisorManyChatSubscriberId: advisor.manyChatSubscriberId });
         manyChatNotified = true;
         await logAuditEvent({
           companyId: lead.companyId,
