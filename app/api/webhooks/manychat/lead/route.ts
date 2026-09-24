@@ -6,10 +6,17 @@ import { IncomingLeadWebhookSchema } from "@/lib/schemas";
 import { isDatabaseConfigured } from "@/lib/db";
 import { getDefaultCompanyId } from "@/lib/company";
 import { buildLeadFingerprint, recordWebhookDelivery, markWebhookEventProcessed } from "@/lib/services/webhook.service";
-import { processIncomingLead } from "@/lib/services/lead.service";
+import { processIncomingLead, DuplicatePhoneLeadError } from "@/lib/services/lead.service";
 import { findLeadByRequestId } from "@/lib/repositories/lead.repository";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { parseLenientJson } from "@/lib/lenient-json";
+
+/**
+ * One lead per phone per this many hours. A client who sends several
+ * messages (or triggers several ManyChat timeouts) must reach one advisor,
+ * not one advisor per message.
+ */
+const PHONE_DEDUP_WINDOW_HOURS = 24;
 
 /**
  * Real-time lead intake from ManyChat. Accepts nombre, telefono_cliente,
@@ -111,7 +118,7 @@ export async function POST(request: NextRequest) {
         tituloPropiedad: payload.titulo_propiedad,
         urlPropiedad: payload.url_propiedad,
       },
-      { source: "manychat_webhook", requestId }
+      { source: "manychat_webhook", requestId, dedupeByPhoneHours: PHONE_DEDUP_WINDOW_HOURS }
     );
     await markWebhookEventProcessed(webhookEventId);
     return NextResponse.json({ ok: true, ...result });
@@ -137,6 +144,25 @@ export async function POST(request: NextRequest) {
       });
       await markWebhookEventProcessed(webhookEventId);
       return NextResponse.json({ ok: true, duplicate: true, leadId: existing?.id ?? null, status: existing?.status ?? null });
+    }
+
+    if (error instanceof DuplicatePhoneLeadError) {
+      const existing = error.existing;
+      await logAuditEvent({
+        companyId,
+        leadId: existing.id,
+        eventType: "LEAD_DUPLICATE_SKIPPED",
+        status: "skipped",
+        message: `Mensaje adicional del mismo teléfono en menos de ${PHONE_DEDUP_WINDOW_HOURS} h; no se creó otro lead ni se notificó a otro asesor.`,
+        metadata: {
+          interesCliente: payload.interes_cliente,
+          datosPropiedad: payload.datos_propiedad,
+          origen: payload.origen,
+          requestId,
+        },
+      });
+      await markWebhookEventProcessed(webhookEventId);
+      return NextResponse.json({ ok: true, duplicate: true, leadId: existing.id, status: existing.status });
     }
 
     const message = error instanceof Error ? error.message : "Error desconocido";

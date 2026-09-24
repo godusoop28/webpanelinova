@@ -90,6 +90,35 @@ export function createLead(data: LeadCreateInput): Promise<Lead> {
   return prisma.lead.create({ data });
 }
 
+/**
+ * Creates the Lead only if this phone has no other lead (outside the
+ * /testing simulator) since `since`. A client who fires several messages
+ * in a row makes ManyChat send several webhooks — each with different
+ * text, so the requestId fingerprint doesn't catch them — often at the
+ * same instant. The per-phone advisory lock serializes those concurrent
+ * deliveries so only the first one creates a lead; the rest see it.
+ */
+export async function createLeadUnlessRecentForPhone(
+  data: LeadCreateInput,
+  since: Date
+): Promise<{ created: true; lead: Lead } | { created: false; existing: Lead }> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`lead-phone:${data.companyId}:${data.phone}`}))`;
+    const existing = await tx.lead.findFirst({
+      where: {
+        companyId: data.companyId,
+        phone: data.phone,
+        createdAt: { gte: since },
+        NOT: { source: "testing_ui" },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (existing) return { created: false as const, existing };
+    const lead = await tx.lead.create({ data });
+    return { created: true as const, lead };
+  });
+}
+
 export function updateLead(id: string, data: LeadUpdateInput): Promise<Lead> {
   return prisma.lead.update({ where: { id }, data });
 }

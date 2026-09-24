@@ -4,7 +4,7 @@ import { env, isLiveAutomation } from "@/lib/env";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { classifyInterest } from "@/lib/interest-classification";
 import { extractCampaignPropertyCode } from "@/lib/campaign-code";
-import { createLead, updateLead } from "@/lib/repositories/lead.repository";
+import { createLead, createLeadUnlessRecentForPhone, updateLead, type LeadCreateInput } from "@/lib/repositories/lead.repository";
 import { findAdvisorByEasyBrokerEmail } from "@/lib/repositories/advisor.repository";
 import {
   selectAndAssignAdvisor,
@@ -76,6 +76,17 @@ export interface IncomingLeadInput {
 }
 
 export { extractCampaignPropertyCode };
+
+/**
+ * Thrown when `dedupeByPhoneHours` is set and this phone already got a lead
+ * within the window — nothing was created, assigned, or sent anywhere.
+ */
+export class DuplicatePhoneLeadError extends Error {
+  constructor(public readonly existing: Lead) {
+    super(`Ya existe un lead reciente (${existing.id}) para el teléfono ${existing.phone}.`);
+    this.name = "DuplicatePhoneLeadError";
+  }
+}
 
 export interface ProcessLeadResult {
   mode: "shadow" | "live";
@@ -166,13 +177,19 @@ async function resolvePropertyAdvisor(
 export async function processIncomingLead(
   companyId: string,
   input: IncomingLeadInput,
-  context: { source: string; requestId: string; automationMode?: "shadow" | "live" }
+  context: {
+    source: string;
+    requestId: string;
+    automationMode?: "shadow" | "live";
+    /** Skip (throw DuplicatePhoneLeadError) if this phone already got a lead in the last N hours. */
+    dedupeByPhoneHours?: number;
+  }
 ): Promise<ProcessLeadResult> {
   const mode = context.automationMode ?? (isLiveAutomation() ? "live" : "shadow");
   const phone = normalizePhoneE164(input.telefonoCliente) || input.telefonoCliente.trim();
   const { interestType, routeLabel, assignmentRoute } = classifyInterest(input.interesCliente);
 
-  const lead: Lead = await createLead({
+  const leadData: LeadCreateInput = {
     companyId,
     name: input.nombre.trim(),
     phone,
@@ -186,7 +203,17 @@ export async function processIncomingLead(
     assignmentStatus: "PENDING",
     requestId: context.requestId,
     rawPayload: input as never,
-  });
+  };
+
+  let lead: Lead;
+  if (context.dedupeByPhoneHours) {
+    const since = new Date(Date.now() - context.dedupeByPhoneHours * 60 * 60 * 1000);
+    const claim = await createLeadUnlessRecentForPhone(leadData, since);
+    if (!claim.created) throw new DuplicatePhoneLeadError(claim.existing);
+    lead = claim.lead;
+  } else {
+    lead = await createLead(leadData);
+  }
 
   await logAuditEvent({
     companyId,
