@@ -38,7 +38,7 @@ const ADVISOR_LEAD_FIELD_IDS = {
   contactUrl: 14780319,
 } as const;
 
-function buildAdvisorLeadFields(input: {
+export function buildAdvisorLeadFields(input: {
   name: string;
   phone: string;
   interest: string;
@@ -400,6 +400,9 @@ export async function processIncomingLead(
         : `Lead recibido desde WhatsApp. Interés: ${input.interesCliente}. Ref: ${context.requestId}`,
       source: MANYCHAT_SOURCE,
       propertyId: property?.public_id,
+      assign: advisor.easyBrokerEmail
+        ? { advisorEmail: advisor.easyBrokerEmail, advisorId: advisor.id, assignmentId: assignment.id }
+        : undefined,
     });
   }
 

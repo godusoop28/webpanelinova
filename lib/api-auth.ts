@@ -1,9 +1,18 @@
 import "server-only";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { env } from "@/lib/env";
 import type { Role } from "@/lib/permissions";
+
+/** Constant-time secret comparison (hashing first makes the lengths equal). */
+export function secretsMatch(provided: string | null | undefined, expected: string): boolean {
+  if (!provided) return false;
+  const a = createHash("sha256").update(provided).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
 
 /**
  * Shared-secret gate for /api/webhooks/* — external systems (ManyChat)
@@ -21,7 +30,7 @@ export function checkIntegrationSecret(request: NextRequest): NextResponse | nul
       { status: 500 }
     );
   }
-  if (!provided || provided !== expected) {
+  if (!secretsMatch(provided, expected)) {
     return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Secreto inválido." } }, { status: 401 });
   }
   return null;

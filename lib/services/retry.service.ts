@@ -3,6 +3,7 @@ import type { IntegrationJob } from "@prisma/client";
 import {
   createIntegrationJob,
   findDueJobs,
+  claimJob,
   markJobSucceeded,
   markJobFailed,
 } from "@/lib/repositories/integration-job.repository";
@@ -20,12 +21,21 @@ import { nextBackoffRetryAt } from "@/lib/retry";
 /** Fase 20: 1 min, 5 min, 15 min, 1 h — then FAILED for good, visible in AuditLog. */
 const BACKOFF_MINUTES = [1, 5, 15, 60];
 
+/** How long a claimed job stays invisible to other cron runs — well past any single job's runtime. */
+const JOB_LEASE_MS = 10 * 60 * 1000;
+
 export type EasyBrokerCreatePayload = {
   name: string;
   phone: string;
   message: string;
   source: string;
   propertyId?: string;
+  /**
+   * The advisor to confirm in EasyBroker once the contact exists. The
+   * synchronous path only assigns after a successful create, so a failed
+   * create must carry this forward or the contact ends up with no agent.
+   */
+  assign?: { advisorEmail: string; advisorId?: string; assignmentId?: string };
 };
 /**
  * `contactId` is often not known yet: EasyBroker's contact_request record
@@ -66,9 +76,18 @@ async function runJob(job: IntegrationJob): Promise<void> {
   switch (job.type) {
     case "EASYBROKER_CREATE": {
       const payload = job.payload as unknown as EasyBrokerCreatePayload;
-      const result = await createContactRequest(payload);
+      const { assign, ...createInput } = payload;
+      const result = await createContactRequest(createInput);
       if (job.leadId && result.id) {
         await updateLead(job.leadId, { easyBrokerContactRequestId: result.id });
+      }
+      if (assign && job.leadId) {
+        await enqueueEasyBrokerAssign(job.companyId, job.leadId, {
+          phone: payload.phone,
+          source: payload.source,
+          propertyId: payload.propertyId,
+          ...assign,
+        });
       }
       return;
     }
@@ -125,6 +144,7 @@ export async function processDueIntegrationJobs(now: Date = new Date()): Promise
   const summary: RetryRunSummary = { processed: 0, succeeded: 0, failed: 0, rescheduled: 0 };
 
   for (const job of jobs) {
+    if (!(await claimJob(job, new Date(Date.now() + JOB_LEASE_MS)))) continue;
     summary.processed += 1;
     try {
       await runJob(job);

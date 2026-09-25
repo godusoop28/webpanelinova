@@ -12,8 +12,23 @@ import {
 } from "@/lib/repositories/user.repository";
 import type { Role } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/services/audit.service";
+import { prisma } from "@/lib/db";
 
 const BCRYPT_ROUNDS = 10;
+
+/** Brute-force brake: after this many failed logins for one email within the window, every attempt fails until it passes. */
+const MAX_FAILED_LOGINS = 10;
+const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function countRecentFailedLogins(email: string): Promise<number> {
+  return prisma.auditLog.count({
+    where: {
+      eventType: "LOGIN_FAILED",
+      message: email,
+      createdAt: { gte: new Date(Date.now() - FAILED_LOGIN_WINDOW_MS) },
+    },
+  });
+}
 
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -27,10 +42,16 @@ export function hashPassword(password: string): Promise<string> {
  * can't be used to enumerate accounts.
  */
 export async function verifyLogin(email: string, password: string): Promise<User | null> {
-  const user = await findUserByEmail(email);
-  if (!user || !user.active) return null;
-  const valid = await bcrypt.compare(password, user.passwordHash ?? "");
-  if (!valid) return null;
+  const normalizedEmail = email.trim().toLowerCase();
+  if ((await countRecentFailedLogins(normalizedEmail)) >= MAX_FAILED_LOGINS) return null;
+
+  const user = await findUserByEmail(normalizedEmail);
+  const valid = user?.active ? await bcrypt.compare(password, user.passwordHash ?? "") : false;
+  if (!user || !valid) {
+    // Stored with no companyId so it never shows up in the panel's activity feed.
+    await logAuditEvent({ eventType: "LOGIN_FAILED", status: "warning", message: normalizedEmail });
+    return null;
+  }
   return user;
 }
 
@@ -75,6 +96,19 @@ export interface UpdateUserFromInput {
   email?: string;
   role?: Role;
   active?: boolean;
+}
+
+/**
+ * True when `id` is the only active ADMIN of its company — demoting or
+ * deactivating it would leave nobody able to manage /usuarios.
+ */
+export async function isLastActiveAdmin(id: string): Promise<boolean> {
+  const user = await findUserById(id);
+  if (!user || user.role !== "ADMIN" || !user.active) return false;
+  const otherAdmins = await prisma.user.count({
+    where: { companyId: user.companyId, role: "ADMIN", active: true, id: { not: id } },
+  });
+  return otherAdmins === 0;
 }
 
 export async function updateUserFromInput(id: string, input: UpdateUserFromInput): Promise<User> {

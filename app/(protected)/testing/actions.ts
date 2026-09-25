@@ -2,6 +2,7 @@
 
 import { requireRole } from "@/lib/dal";
 import { isDatabaseConfigured } from "@/lib/db";
+import { isInternalTestingEnabled } from "@/lib/env";
 import { getDefaultCompanyId } from "@/lib/company";
 import { processIncomingLead, type ProcessLeadResult } from "@/lib/services/lead.service";
 import { buildLeadFingerprint } from "@/lib/services/webhook.service";
@@ -22,6 +23,10 @@ export async function simulateLeadAction(
   formData: FormData
 ): Promise<SimulateLeadState> {
   await requireRole("ADMIN");
+  // Server Actions are callable directly, not only from the page that renders them.
+  if (!isInternalTestingEnabled()) {
+    return { error: "El diagnóstico interno está desactivado en este entorno." };
+  }
 
   if (!isDatabaseConfigured()) {
     return { error: "DATABASE_URL no está configurada todavía — no hay a dónde escribir el lead de prueba." };

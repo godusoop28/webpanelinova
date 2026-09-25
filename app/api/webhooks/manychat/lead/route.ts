@@ -7,7 +7,7 @@ import { isDatabaseConfigured } from "@/lib/db";
 import { getDefaultCompanyId } from "@/lib/company";
 import { buildLeadFingerprint, recordWebhookDelivery, markWebhookEventProcessed } from "@/lib/services/webhook.service";
 import { processIncomingLead, DuplicatePhoneLeadError } from "@/lib/services/lead.service";
-import { findLeadByRequestId } from "@/lib/repositories/lead.repository";
+import { findLeadByRequestId, updateLead } from "@/lib/repositories/lead.repository";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { parseLenientJson } from "@/lib/lenient-json";
 
@@ -166,7 +166,25 @@ export async function POST(request: NextRequest) {
     }
 
     const message = error instanceof Error ? error.message : "Error desconocido";
+    console.error("[WEBHOOK lead] pipeline falló", error);
     await markWebhookEventProcessed(webhookEventId, message);
-    return NextResponse.json({ ok: false, error: { code: "INTERNAL_ERROR", message } }, { status: 500 });
+    // A retry of this webhook is deduplicated (same requestId/phone), so a
+    // lead left in PROCESSING would never move again. Mark it FAILED so it
+    // shows up in the panel for manual reassignment instead of hiding.
+    const stuck = await findLeadByRequestId(requestId).catch(() => null);
+    if (stuck && (stuck.status === "PROCESSING" || stuck.status === "RECEIVED")) {
+      await updateLead(stuck.id, { status: "FAILED" }).catch(() => undefined);
+      await logAuditEvent({
+        companyId,
+        leadId: stuck.id,
+        eventType: "LEAD_FAILED",
+        status: "error",
+        message: `El procesamiento del lead falló: ${message}`,
+      });
+    }
+    return NextResponse.json(
+      { ok: false, error: { code: "INTERNAL_ERROR", message: "No se pudo procesar el lead." } },
+      { status: 500 }
+    );
   }
 }

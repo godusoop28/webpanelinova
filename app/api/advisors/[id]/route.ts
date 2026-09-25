@@ -41,6 +41,10 @@ export async function PATCH(request: NextRequest, ctx: RouteParams) {
     );
   }
 
+  if (!(await getAdvisorView(id))) {
+    return NextResponse.json({ ok: false, error: { code: "NOT_FOUND", message: "Asesor no encontrado." } }, { status: 404 });
+  }
+
   const advisor = await updateAdvisorFromInput(id, parsed.data);
   return NextResponse.json({ ok: true, advisor });
 }
@@ -51,6 +55,9 @@ export async function DELETE(_request: NextRequest, ctx: RouteParams) {
   if (!authResult.ok) return unauthorizedResponse(authResult);
 
   const { id } = await ctx.params;
+  if (!(await getAdvisorView(id))) {
+    return NextResponse.json({ ok: false, error: { code: "NOT_FOUND", message: "Asesor no encontrado." } }, { status: 404 });
+  }
   const advisor = await setAdvisorActiveState(id, false);
   return NextResponse.json({ ok: true, advisor });
 }

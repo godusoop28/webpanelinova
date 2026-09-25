@@ -35,6 +35,7 @@ export type AuditEventType =
   | "USER_UPDATED"
   | "USER_PASSWORD_RESET"
   | "USER_DELETED"
+  | "LOGIN_FAILED"
   | "ADVISOR_CREATED"
   | "ADVISOR_UPDATED"
   | "ADVISOR_PAUSED"

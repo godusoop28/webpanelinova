@@ -19,4 +19,14 @@ describe("toCsv", () => {
     const csv = toCsv([["Campaña", "Sin respuesta"]]);
     expect(csv).toBe("Campaña,Sin respuesta");
   });
+
+  it("neutralizes cells that Excel would run as formulas", () => {
+    const csv = toCsv([["=HYPERLINK(\"http://x\")", "@SUM(A1)", "-2+3", "+cmd|x"]]);
+    expect(csv).toBe(`"'=HYPERLINK(""http://x"")",'@SUM(A1),'-2+3,'+cmd|x`);
+  });
+
+  it("leaves phone numbers and negative numbers alone", () => {
+    const csv = toCsv([["+5215512345678", "-15", "+52 (55) 1234-5678"]]);
+    expect(csv).toBe("+5215512345678,-15,+52 (55) 1234-5678");
+  });
 });

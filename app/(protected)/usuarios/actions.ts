@@ -14,7 +14,10 @@ import {
   resetUserPassword,
   setUserActive,
   removeUser,
+  isLastActiveAdmin,
 } from "@/lib/services/user.service";
+
+const LAST_ADMIN_ERROR = "Debe quedar al menos un ADMIN activo.";
 
 export interface UserFormState {
   error?: string;
@@ -76,6 +79,10 @@ export async function updateUserAction(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
 
+  if ((parsed.data.rol !== "ADMIN" || !parsed.data.activo) && (await isLastActiveAdmin(id))) {
+    return { error: LAST_ADMIN_ERROR };
+  }
+
   try {
     await updateUserFromInput(id, {
       name: parsed.data.nombre,
@@ -92,6 +99,7 @@ export async function updateUserAction(
 
 export async function toggleUserAction(id: string, activo: boolean): Promise<void> {
   await requireRole("ADMIN");
+  if (!activo && (await isLastActiveAdmin(id))) return;
   try {
     await setUserActive(id, activo);
   } catch {
@@ -124,6 +132,7 @@ export async function resetPasswordAction(
 export async function deleteUserAction(id: string): Promise<void> {
   const currentUser = await requireRole("ADMIN");
   if (currentUser.id === id) return; // never let an admin delete their own account this way
+  if (await isLastActiveAdmin(id)) return;
   try {
     await removeUser(id);
   } catch {

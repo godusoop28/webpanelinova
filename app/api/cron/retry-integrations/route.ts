@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { env } from "@/lib/env";
+import { secretsMatch } from "@/lib/api-auth";
 import { processDueIntegrationJobs } from "@/lib/services/retry.service";
 
 /**
@@ -21,7 +22,7 @@ function checkCronSecret(request: NextRequest): NextResponse | null {
   } catch {
     return NextResponse.json({ ok: false, error: "CRON_SECRET no está configurado." }, { status: 500 });
   }
-  if (!provided || provided !== expected) {
+  if (!secretsMatch(provided, expected)) {
     return NextResponse.json({ ok: false, error: "Secreto inválido." }, { status: 401 });
   }
   return null;

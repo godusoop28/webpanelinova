@@ -28,6 +28,20 @@ export function findDueJobs(now: Date, limit = 20): Promise<IntegrationJob[]> {
   });
 }
 
+/**
+ * Leases a due job to this cron run by pushing its nextRetryAt forward, but
+ * only if nobody else touched it since findDueJobs read it. Two overlapping
+ * runs (a slow one + the next tick, or a manual trigger) would otherwise
+ * both execute it and e.g. notify the advisor twice.
+ */
+export async function claimJob(job: IntegrationJob, leaseUntil: Date): Promise<boolean> {
+  const { count } = await prisma.integrationJob.updateMany({
+    where: { id: job.id, status: job.status, attempts: job.attempts, nextRetryAt: job.nextRetryAt },
+    data: { nextRetryAt: leaseUntil },
+  });
+  return count === 1;
+}
+
 export function markJobSucceeded(id: string): Promise<IntegrationJob> {
   return prisma.integrationJob.update({ where: { id }, data: { status: "SUCCESS" } });
 }
