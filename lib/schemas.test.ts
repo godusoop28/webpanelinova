@@ -103,6 +103,22 @@ describe("ManyChatMessageWebhookSchema", () => {
     });
   });
 
+  it("acepta nulls reales de ManyChat en WhatsApp (phone y last_interaction vienen null)", async () => {
+    const { ManyChatMessageWebhookSchema } = await import("@/lib/schemas");
+    const parsed = ManyChatMessageWebhookSchema.parse({
+      key: "user:1016264146",
+      id: "1016264146",
+      name: "Emy",
+      last_input_text: "Hola",
+      phone: null,
+      whatsapp_phone: "+5213300000000",
+      last_interaction: null,
+      last_seen: null,
+      custom_fields: {},
+    });
+    expect(parsed).toMatchObject({ subscriber_id: "1016264146", text: "Hola", phone: "+5213300000000", last_interaction: undefined });
+  });
+
   it("acepta la forma plana e ignora variables sin reemplazar", async () => {
     const { ManyChatMessageWebhookSchema } = await import("@/lib/schemas");
     const parsed = ManyChatMessageWebhookSchema.parse({ subscriber_id: 42, text: "hola", phone: "{{phone}}" });

@@ -148,7 +148,7 @@ export const DateRangePresetSchema = z.enum([
  * undefined; solo subscriber_id es obligatorio.
  */
 const optionalManyChatText = z
-  .union([z.string(), z.number()])
+  .union([z.string(), z.number(), z.null()])
   .optional()
   .transform((value) => {
     if (value === undefined || value === null) return undefined;
