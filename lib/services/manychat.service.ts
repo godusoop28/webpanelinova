@@ -1,5 +1,5 @@
 import "server-only";
-import { manyChatRequest, ManyChatApiError } from "@/lib/integrations/manychat.client";
+import { manyChatRequest, ManyChatApiError, ManyChatTimeoutError } from "@/lib/integrations/manychat.client";
 import { withRetry } from "@/lib/retry";
 import { env } from "@/lib/env";
 
@@ -65,4 +65,48 @@ export async function notifyAdvisor(input: {
   return { customFieldsUpdated };
 }
 
-export { ManyChatApiError };
+/**
+ * Mensaje de texto libre por WhatsApp (formato Dynamic Block v2 con
+ * content.type "whatsapp", documentado por ManyChat para sendContent).
+ * Solo válido dentro de la ventana de 24 h desde el último mensaje del
+ * cliente: fuera de ella WhatsApp exige plantilla y ManyChat responde error.
+ *
+ * SIN reintento interno a propósito: un timeout es ambiguo (ManyChat pudo
+ * haberlo entregado) y reintentarlo duplicaría el mensaje. Quien llama
+ * (el outbox de conversaciones) decide según el tipo de error.
+ */
+export async function sendWhatsAppText(subscriberId: string, text: string): Promise<void> {
+  await manyChatRequest({
+    path: "/fb/sending/sendContent",
+    body: {
+      subscriber_id: Number(subscriberId),
+      data: {
+        version: "v2",
+        content: { type: "whatsapp", messages: [{ type: "text", text }] },
+      },
+    },
+    timeoutMs: 12000,
+  });
+}
+
+export interface ManyChatSubscriberInfo {
+  id: string;
+  name?: string;
+  first_name?: string;
+  whatsapp_phone?: string;
+  phone?: string;
+  live_chat_url?: string;
+  last_interaction?: string | null;
+  tags?: { id: number; name: string }[];
+}
+
+export async function getSubscriberInfo(subscriberId: string): Promise<ManyChatSubscriberInfo | null> {
+  const result = await manyChatRequest<{ data?: ManyChatSubscriberInfo }>({
+    method: "GET",
+    path: "/fb/subscriber/getInfo",
+    query: { subscriber_id: subscriberId },
+  });
+  return result.data ?? null;
+}
+
+export { ManyChatApiError, ManyChatTimeoutError };

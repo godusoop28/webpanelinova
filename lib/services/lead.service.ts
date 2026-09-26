@@ -29,7 +29,7 @@ const MANYCHAT_SOURCE = "WhatsApp ManyChat";
 
 // Campos usados por el flow de ManyChat "Aviso asesor nuevo lead".
 // Estos IDs corresponden a la cuenta actual de Century 21 Inova.
-const ADVISOR_LEAD_FIELD_IDS = {
+export const ADVISOR_LEAD_FIELD_IDS = {
   name: 14780313,
   phone: 14780314,
   requestType: 14780316,
@@ -37,6 +37,35 @@ const ADVISOR_LEAD_FIELD_IDS = {
   reference: 14780318,
   contactUrl: 14780319,
 } as const;
+
+/**
+ * Contexto que agrega el asistente conversacional. Solo datos que el
+ * cliente dio o que se verificaron; nunca se inventa un nombre ni un dato.
+ */
+export interface LeadConversationContext {
+  reason: string;
+  operation?: string | null;
+  zone?: string | null;
+  budget?: string | null;
+  additionalNeeds?: string[];
+  summary?: string | null;
+  conversationUrl?: string | null;
+}
+
+// Los campos de texto de ManyChat se leen en el WhatsApp del asesor: acotados.
+const RELATED_INFO_MAX = 900;
+
+function buildConversationLines(context: LeadConversationContext): string[] {
+  return [
+    `Motivo: ${context.reason}`,
+    context.operation ? `Operación: ${context.operation}` : null,
+    context.zone ? `Zona: ${context.zone}` : null,
+    context.budget ? `Presupuesto: ${context.budget}` : null,
+    context.additionalNeeds?.length ? `Otras necesidades: ${context.additionalNeeds.join(", ")}` : null,
+    context.summary ? `Resumen: ${context.summary}` : null,
+    context.conversationUrl ? `Conversación: ${context.conversationUrl}` : null,
+  ].filter((line): line is string => Boolean(line));
+}
 
 export function buildAdvisorLeadFields(input: {
   name: string;
@@ -46,12 +75,19 @@ export function buildAdvisorLeadFields(input: {
   propertyPublicId?: string;
   property?: EasyBrokerProperty | null;
   propertyData?: string;
+  conversation?: LeadConversationContext;
 }): ManyChatCustomField[] {
   const cleanPhone = input.phone.replace(/\D/g, "");
   const reference = input.propertyPublicId || (input.routeLabel === "Campaña propiedad" ? "Campaña propiedad" : input.routeLabel);
-  const relatedInfo = input.property
+  const propertyInfo = input.property
     ? [input.property.title, input.property.location, input.property.public_url].filter(Boolean).join("\n")
     : input.propertyData?.trim() || "Sin información adicional";
+  const relatedInfo = input.conversation
+    ? [input.property ? propertyInfo : null, ...buildConversationLines(input.conversation)]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, RELATED_INFO_MAX)
+    : propertyInfo;
 
   return [
     { fieldId: ADVISOR_LEAD_FIELD_IDS.name, value: input.name.trim() },
@@ -73,6 +109,8 @@ export interface IncomingLeadInput {
   requestId?: string;
   tituloPropiedad?: string;
   urlPropiedad?: string;
+  /** Solo lo llena el asistente conversacional (lib/services/conversation-handoff.service.ts). */
+  conversation?: LeadConversationContext;
 }
 
 export { extractCampaignPropertyCode };
@@ -356,6 +394,13 @@ export async function processIncomingLead(
   // /contact_requests matched by phone+source+property_id, same as the
   // original Make scenario did — this must NOT be gated on an id that
   // never arrives, or the advisor never gets confirmed in EasyBroker.
+  const baseMessage = property
+    ? `Lead recibido desde WhatsApp. El cliente vio la propiedad ${property.public_id}.\n\nDato enviado: ${input.datosPropiedad ?? ""}\nInterés: ${input.interesCliente}\nOrigen: ${MANYCHAT_SOURCE}`
+    : `Lead recibido desde WhatsApp. Interés: ${input.interesCliente}. Ref: ${context.requestId}`;
+  const contactRequestMessage = input.conversation
+    ? `${baseMessage}\n\n${buildConversationLines(input.conversation).join("\n")}`.slice(0, 2000)
+    : baseMessage;
+
   let contactRequestCreated = false;
   const contactRequestId: string | null = null;
   let contactId: string | null = null;
@@ -365,9 +410,7 @@ export async function processIncomingLead(
     await createContactRequest({
       name: input.nombre,
       phone,
-      message: property
-        ? `Lead recibido desde WhatsApp. El cliente vio la propiedad ${property.public_id}.\n\nDato enviado: ${input.datosPropiedad ?? ""}\nInterés: ${input.interesCliente}\nOrigen: ${MANYCHAT_SOURCE}`
-        : `Lead recibido desde WhatsApp. Interés: ${input.interesCliente}. Ref: ${context.requestId}`,
+      message: contactRequestMessage,
       source: MANYCHAT_SOURCE,
       propertyId: property?.public_id,
     });
@@ -395,9 +438,7 @@ export async function processIncomingLead(
     await enqueueEasyBrokerCreate(companyId, lead.id, {
       name: input.nombre,
       phone,
-      message: property
-        ? `Lead recibido desde WhatsApp. El cliente vio la propiedad ${property.public_id}.\n\nDato enviado: ${input.datosPropiedad ?? ""}\nInterés: ${input.interesCliente}\nOrigen: ${MANYCHAT_SOURCE}`
-        : `Lead recibido desde WhatsApp. Interés: ${input.interesCliente}. Ref: ${context.requestId}`,
+      message: contactRequestMessage,
       source: MANYCHAT_SOURCE,
       propertyId: property?.public_id,
       assign: advisor.easyBrokerEmail
@@ -488,6 +529,7 @@ export async function processIncomingLead(
       propertyPublicId,
       property,
       propertyData: input.datosPropiedad,
+      conversation: input.conversation,
     });
 
     try {

@@ -53,6 +53,27 @@ export const env = {
       return requireEnv("OPENAI_PROPERTY_SEARCH_MODEL");
     },
   },
+  assistant: {
+    /** Modelo del asistente conversacional; por defecto el mismo de la búsqueda de propiedades. */
+    get model() {
+      return optionalEnv("OPENAI_ASSISTANT_MODEL") ?? requireEnv("OPENAI_PROPERTY_SEARCH_MODEL");
+    },
+    /** Interruptor de emergencia en el hosting: "true" apaga el asistente aunque el panel diga ON. */
+    get killSwitch() {
+      return optionalEnv("ASSISTANT_DISABLED") === "true";
+    },
+    /** Dominios cuyos enlaces se pueden leer para identificar propiedades (coma). */
+    get linkDomains() {
+      return (optionalEnv("ASSISTANT_LINK_DOMAINS") ?? "easybroker.com")
+        .split(",")
+        .map((domain) => domain.trim().toLowerCase())
+        .filter(Boolean);
+    },
+    /** URL pública del panel para enlazar conversaciones en avisos a asesores. */
+    get panelUrl() {
+      return (optionalEnv("AUTH_URL") ?? optionalEnv("NEXTAUTH_URL") ?? "").replace(/\/$/, "");
+    },
+  },
   integration: {
     /** Shared secret for /api/webhooks/* (ManyChat) and the admin API. */
     get secret() {

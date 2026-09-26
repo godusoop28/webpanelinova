@@ -9,6 +9,7 @@ import {
   LineChart,
   LogOut,
   Menu,
+  MessagesSquare,
   Plug,
   Settings,
   Users,
@@ -22,6 +23,7 @@ import type { PanelSection, Role } from "@/lib/permissions";
 const ICONS: Record<PanelSection, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
   leads: Users,
+  conversaciones: MessagesSquare,
   asesores: UserSquare2,
   reportes: LineChart,
   usuarios: Users,

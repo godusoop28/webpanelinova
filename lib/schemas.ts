@@ -137,3 +137,32 @@ export const DateRangePresetSchema = z.enum([
   "last_month",
   "custom",
 ]);
+
+// ---------------------------------------------------------------------------
+// Asistente conversacional — mensaje entrante desde ManyChat (External Request)
+// ---------------------------------------------------------------------------
+
+/**
+ * ManyChat interpola {{variables}} como texto: un campo vacío puede llegar
+ * como "" o como el literal sin reemplazar. Todo lo opcional se normaliza a
+ * undefined; solo subscriber_id es obligatorio.
+ */
+const optionalManyChatText = z
+  .union([z.string(), z.number()])
+  .optional()
+  .transform((value) => {
+    if (value === undefined || value === null) return undefined;
+    const text = String(value).trim();
+    return text && !/^\{\{.*\}\}$/.test(text) ? text : undefined;
+  });
+
+export const ManyChatMessageWebhookSchema = z.object({
+  subscriber_id: z.union([z.string(), z.number()]).transform((value) => String(value).trim()).pipe(z.string().regex(/^\d{1,20}$/, "subscriber_id inválido.")),
+  text: optionalManyChatText,
+  phone: optionalManyChatText,
+  name: optionalManyChatText,
+  message_id: optionalManyChatText,
+  last_interaction: optionalManyChatText,
+});
+
+export type ManyChatMessageWebhookPayload = z.infer<typeof ManyChatMessageWebhookSchema>;

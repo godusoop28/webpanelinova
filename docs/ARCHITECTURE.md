@@ -6,6 +6,7 @@ PostgreSQL (Neon) como única base de datos.
 
 ```
 ManyChat
+   │  POST /api/webhooks/manychat/message   (asistente conversacional con IA)
    │  POST /api/webhooks/manychat/lead
    │  POST /api/webhooks/manychat/property-search
    ▼
@@ -34,6 +35,7 @@ historial — pero el sistema en producción no depende de ninguno de los dos.
 | `/dashboard` | ADMIN, DIRECCION, CONSULTA | Resumen ejecutivo (KPIs por periodo) |
 | `/leads` | ADMIN, DIRECCION | Lista y gestión de leads |
 | `/leads/[id]` | ADMIN, DIRECCION | Detalle, reasignación manual, cambio de estado |
+| `/conversaciones` | ADMIN, DIRECCION (config y simulador: ADMIN) | Asistente de WhatsApp: historial, intención, pendientes, pausar/reanudar IA |
 | `/asesores` | ADMIN, DIRECCION | Alta/edición/pausa de asesores, motor de asignación |
 | `/reportes` | ADMIN, DIRECCION, CONSULTA (solo lectura) | Desempeño por periodo/asesor |
 | `/usuarios` | ADMIN | Alta/edición/contraseña de cuentas del panel |
@@ -72,13 +74,23 @@ Código: `lib/services/lead.service.ts` (orquestación),
 puro y testeable), `lib/services/easybroker.service.ts`,
 `lib/services/manychat.service.ts`.
 
+## Asistente conversacional (WhatsApp con IA)
+
+Ver `docs/CONVERSATIONAL_ASSISTANT.md`: recepción persistente, agrupación
+de ráfagas, OpenAI con herramientas acotadas, envío por ManyChat
+`sendContent`, panel `/conversaciones`, activación gradual y rollback. Usa
+este mismo motor de asignación (no lo reemplaza) y el cron
+`/api/cron/conversations` cada minuto como garantía de procesamiento.
+
 ## Modo shadow / live
 
 `AUTOMATION_MODE` (variable de entorno, nunca desde el panel):
 
 - `shadow` (default): corre todo el pipeline — crea el Lead, corre el
   motor de asignación, escribe AuditLog — pero **nunca** llama a EasyBroker
-  ni a ManyChat de verdad.
+  ni a ManyChat de verdad. Ojo: shadow SÍ escribe leads y asignaciones
+  reales (cuentan para la ruleta). Las pruebas del asistente usan en cambio
+  conversaciones `isTest`, que no escriben leads ni asignaciones.
 - `live`: llamadas reales.
 
 Es un mecanismo de seguridad interno, no algo que el negocio necesite ver
@@ -109,7 +121,10 @@ Ver `.env.example` para la lista completa y comentada. Resumen por grupo:
 - **Base de datos**: `DATABASE_URL` (Neon, pooled).
 - **EasyBroker**: `EASYBROKER_API_KEY`, `EASYBROKER_FALLBACK_AGENT_EMAIL`.
 - **ManyChat**: `MANYCHAT_API_KEY`, `MANYCHAT_ADVISOR_FLOW_ID`.
-- **OpenAI**: `OPENAI_API_KEY`, `OPENAI_PROPERTY_SEARCH_MODEL`.
+- **OpenAI**: `OPENAI_API_KEY`, `OPENAI_PROPERTY_SEARCH_MODEL`,
+  `OPENAI_ASSISTANT_MODEL` (opcional).
+- **Asistente**: `ASSISTANT_DISABLED` (interruptor de emergencia),
+  `ASSISTANT_LINK_DOMAINS` (opcional).
 - **Seguridad de webhooks**: `INTEGRATION_SECRET`, `CRON_SECRET`.
 - **Automatización**: `AUTOMATION_MODE` (`shadow`/`live`).
 - **Seed**: `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` (solo para el primer
@@ -135,7 +150,9 @@ las URLs, headers y payloads exactos que hay que configurar en ManyChat.
 ## Base de datos: modelos principales
 
 `Company`, `User`, `Advisor`, `Lead`, `LeadAssignment`, `AssignmentRule`,
-`Integration`, `AuditLog`, `WebhookEvent`, `IntegrationJob`. Todos con
+`Integration`, `AuditLog`, `WebhookEvent`, `IntegrationJob`, y del
+asistente: `AssistantSettings`, `Conversation`, `ConversationMessage`,
+`ConversationTurn`, `ConversationEscalation`, `PropertyCacheEntry`. Todos con
 `companyId` — el diseño es multiempresa desde el inicio aunque hoy solo
 exista Century 21 Innova (sembrada por `prisma/seed.ts`).
 
@@ -146,6 +163,8 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+TEST_DATABASE_URL=postgresql://…localhost…/db npm run test:integration   # Postgres local de prueba
+npm run test:eval                                                     # OpenAI + EasyBroker reales, sin BD
 ```
 
 `lib/assignment-engine.ts`, `lib/phone.ts`, `lib/fingerprint.ts`,

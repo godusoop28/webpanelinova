@@ -1,6 +1,6 @@
 import "server-only";
 import { env } from "@/lib/env";
-import { listPublishedProperties, getProperty, type EasyBrokerProperty } from "@/lib/services/easybroker.service";
+import { listPublishedPropertiesPage, getProperty, type EasyBrokerProperty } from "@/lib/services/easybroker.service";
 import { openAiJsonCompletion } from "@/lib/integrations/openai.client";
 import {
   AiPropertySearchResponseSchema,
@@ -10,11 +10,13 @@ import {
 } from "@/lib/property-search-schema";
 
 /**
- * Fase 23: the old Make scenario walked 5 pages of 50 (250 properties) —
- * kept as the default, but centralized here instead of hardcoded in five
- * places, so changing it later is a one-line edit.
+ * Fase 23: the old Make scenario walked a fixed 5 pages of 50 (250
+ * properties) — anything past that was invisible and the search answered
+ * "sin coincidencias". Now page 1 reports the real total and the remaining
+ * pages are fetched from it; MAX_PAGES is only a safety cap (1,000
+ * properties), far above the current inventory (~50 published).
  */
-const DEFAULT_MAX_PAGES = 5;
+const MAX_PAGES = 20;
 const PAGE_SIZE = 50;
 // ManyChat's External Request gives up after ~10s and then shows the client
 // an empty menu, so OpenAI must answer well inside that window.
@@ -72,13 +74,17 @@ export async function searchProperties(
   query: string,
   options: { maxPages?: number } = {}
 ): Promise<PropertySearchResult> {
-  const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
+  const maxPages = options.maxPages ?? MAX_PAGES;
 
+  const first = await listPublishedPropertiesPage(1, PAGE_SIZE);
+  const totalPages = first.total != null ? Math.ceil(first.total / PAGE_SIZE) : first.hasNext ? maxPages : 1;
   // allSettled: one failed EasyBroker page shouldn't empty the whole search.
   const pages = await Promise.allSettled(
-    Array.from({ length: maxPages }, (_, i) => listPublishedProperties(i + 1, PAGE_SIZE))
+    Array.from({ length: Math.min(totalPages, maxPages) - 1 }, (_, i) =>
+      listPublishedPropertiesPage(i + 2, PAGE_SIZE).then((page) => page.content)
+    )
   );
-  const candidates = pages.flatMap((page) => (page.status === "fulfilled" ? page.value : []));
+  const candidates = [...first.content, ...pages.flatMap((page) => (page.status === "fulfilled" ? page.value : []))];
   const byId = new Map(candidates.map((p) => [p.public_id, p]));
 
   if (candidates.length === 0) {

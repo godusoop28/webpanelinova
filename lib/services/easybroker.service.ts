@@ -9,14 +9,53 @@ export interface EasyBrokerAgent {
   mobile_phone?: string;
 }
 
+export interface EasyBrokerOperation {
+  type?: string;
+  amount?: number;
+  currency?: string;
+  formatted_amount?: string;
+  unit?: string;
+}
+
 export interface EasyBrokerProperty {
   public_id: string;
   title: string;
   property_type?: string;
+  /** Siempre texto: el detalle de EasyBroker devuelve un objeto {name, ...} y aquí se normaliza a su `name`. */
   location?: string;
   public_url?: string;
   agent?: EasyBrokerAgent;
-  operations?: { formatted_amount?: string }[];
+  operations?: EasyBrokerOperation[];
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  half_bathrooms?: number | null;
+  parking_spaces?: number | null;
+  lot_size?: number | null;
+  construction_size?: number | null;
+  description?: string | null;
+  updated_at?: string;
+  status?: string;
+  show_prices?: boolean;
+  features?: { name?: string }[];
+}
+
+/**
+ * GET /properties devuelve `location` como texto, pero GET /properties/{id}
+ * como objeto ({name, latitude, street, ...}). Sin normalizar, el aviso al
+ * asesor mostraba "[object Object]". Se conserva solo el nombre público
+ * (nunca calle/número: la propiedad puede ocultar su ubicación exacta).
+ */
+function normalizeProperty(raw: Record<string, unknown>): EasyBrokerProperty {
+  const location = raw.location as unknown;
+  return {
+    ...(raw as unknown as EasyBrokerProperty),
+    location:
+      typeof location === "string"
+        ? location
+        : location && typeof location === "object" && typeof (location as { name?: unknown }).name === "string"
+          ? (location as { name: string }).name
+          : undefined,
+  };
 }
 
 export interface EasyBrokerContactRequest {
@@ -48,21 +87,34 @@ const RETRY_OPTIONS = { maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 4000 };
 
 export async function getProperty(publicId: string): Promise<EasyBrokerProperty> {
   return withRetry(
-    () => easyBrokerRequest<EasyBrokerProperty>({ path: `/properties/${encodeURIComponent(publicId)}` }),
+    () =>
+      easyBrokerRequest<Record<string, unknown>>({ path: `/properties/${encodeURIComponent(publicId)}` }).then(normalizeProperty),
     RETRY_OPTIONS
   );
 }
 
 export async function listPublishedProperties(page: number, limit = 50): Promise<EasyBrokerProperty[]> {
+  return (await listPublishedPropertiesPage(page, limit)).content;
+}
+
+/** Una página del inventario publicado, con la indicación de si hay más (para recorrerlo completo). */
+export async function listPublishedPropertiesPage(
+  page: number,
+  limit = 50
+): Promise<{ content: EasyBrokerProperty[]; total: number | null; hasNext: boolean }> {
   const result = await withRetry(
     () =>
-      easyBrokerRequest<{ content: EasyBrokerProperty[] }>({
+      easyBrokerRequest<{ content: Record<string, unknown>[]; pagination?: { total?: number; next_page?: string | null } }>({
         path: "/properties",
         query: { page, limit, "search[statuses][]": "published" },
       }),
     RETRY_OPTIONS
   );
-  return result.content ?? [];
+  return {
+    content: (result.content ?? []).map(normalizeProperty),
+    total: result.pagination?.total ?? null,
+    hasNext: Boolean(result.pagination?.next_page),
+  };
 }
 
 export async function createContactRequest(input: {

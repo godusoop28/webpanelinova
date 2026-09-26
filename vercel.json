@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/retry-integrations",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/conversations",
+      "schedule": "* * * * *"
     }
   ]
 }

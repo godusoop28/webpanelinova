@@ -37,6 +37,26 @@ export function checkIntegrationSecret(request: NextRequest): NextResponse | nul
 }
 
 /**
+ * Vercel Cron manda "Authorization: Bearer <CRON_SECRET>"; "x-cron-secret"
+ * y "?secret=" se aceptan para otros programadores.
+ */
+export function checkCronSecret(request: NextRequest): NextResponse | null {
+  const authHeader = request.headers.get("authorization");
+  const bearerToken = authHeader?.toLowerCase().startsWith("bearer ") ? authHeader.slice(7) : undefined;
+  const provided = bearerToken ?? request.headers.get("x-cron-secret") ?? request.nextUrl.searchParams.get("secret");
+  let expected: string;
+  try {
+    expected = env.cron.secret;
+  } catch {
+    return NextResponse.json({ ok: false, error: "CRON_SECRET no está configurado." }, { status: 500 });
+  }
+  if (!secretsMatch(provided, expected)) {
+    return NextResponse.json({ ok: false, error: "Secreto inválido." }, { status: 401 });
+  }
+  return null;
+}
+
+/**
  * Panel-session gate for /api/admin/* and /api/advisors* JSON endpoints
  * (Fase 56). Mirrors lib/dal.ts's requireRole, but returns a result instead
  * of redirect()ing — a redirect to /login is useless to a fetch() caller

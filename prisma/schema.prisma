@@ -97,6 +97,10 @@ model Company {
   integrations     Integration[]
   auditLogs        AuditLog[]
   integrationJobs  IntegrationJob[]
+  conversations     Conversation[]
+  escalations       ConversationEscalation[]
+  assistantSettings AssistantSettings?
+  propertyCache     PropertyCacheEntry[]
 
   @@map("companies")
 }
@@ -202,6 +206,7 @@ model Lead {
   assignments     LeadAssignment[]
   auditLogs       AuditLog[]
   integrationJobs IntegrationJob[]
+  conversations   Conversation[]
 
   @@index([phone])
   @@index([createdAt])
@@ -350,4 +355,271 @@ model WebhookEvent {
   @@index([externalId])
   @@index([createdAt])
   @@map("webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Asistente conversacional (WhatsApp vía ManyChat)
+// Ver docs/CONVERSATIONAL_ASSISTANT.md. ManyChat solo transporta mensajes:
+// memoria, reglas y decisiones viven aquí.
+// ---------------------------------------------------------------------------
+
+/** OFF: el backend guarda mensajes pero no contesta (ManyChat cae al flujo anterior). TEST_ONLY: solo contactos de prueba. ON: todos. */
+enum AssistantMode {
+  OFF
+  TEST_ONLY
+  ON
+}
+
+/** Quién controla la conversación en el número del bot. Independiente de la asignación comercial. */
+enum ConversationControl {
+  AI
+  HUMAN
+  PAUSED
+}
+
+/** Estado de la canalización comercial (lead + asesor), separado del control de la conversación. */
+enum ConversationHandoffState {
+  NONE
+  ASSIGNED
+  EXISTING_LEAD
+  NO_ADVISOR
+  FAILED
+  NOT_APPLICABLE
+}
+
+enum ConversationIntent {
+  UNKNOWN
+  PROPERTY_INQUIRY
+  BUY
+  RENT
+  SELL
+  LEASE_OUT
+  INVEST
+  AGENT_COLLABORATION
+  PROVIDER
+  MANAGEMENT
+  HUMAN_REQUEST
+  OTHER
+}
+
+enum ConversationMessageRole {
+  USER
+  ASSISTANT
+  HUMAN_AGENT
+  SYSTEM
+}
+
+/** Salientes: QUEUED → SENDING → SENT | FAILED | UNCERTAIN (timeout: el proveedor pudo haberlo aceptado). SIMULATED: nunca se envía. */
+enum ConversationMessageStatus {
+  RECEIVED
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  UNCERTAIN
+  CANCELLED
+  SIMULATED
+}
+
+enum ConversationTurnStatus {
+  RUNNING
+  COMPLETED
+  SUPERSEDED
+  FAILED
+}
+
+enum EscalationType {
+  MANAGEMENT
+  HUMAN
+  FOLLOW_UP
+  PROCESSING_ERROR
+}
+
+enum EscalationStatus {
+  PENDING
+  NOTIFIED
+  RESOLVED
+}
+
+model AssistantSettings {
+  id                      String        @id @default(cuid())
+  companyId               String        @unique
+  mode                    AssistantMode @default(OFF)
+  /** Silencio que cierra una ráfaga de mensajes antes de interpretarla. */
+  debounceSeconds         Int           @default(6)
+  /** Tope: una ráfaga continua no pospone la respuesta más allá de esto. */
+  maxWaitSeconds          Int           @default(25)
+  /** Aclaraciones sin progreso antes de ofrecer/realizar atención humana. */
+  maxClarifications       Int           @default(3)
+  /** Minutos sin respuesta (con interés inmobiliario confirmado) antes de canalizar lo disponible. 0 = nunca. */
+  abandonHandoffMinutes   Int           @default(30)
+  /** Un lead de este teléfono dentro de esta ventana se reutiliza: no se reasigna. */
+  existingLeadWindowDays  Int           @default(30)
+  /** Subscriber IDs de ManyChat autorizados para pruebas (modo TEST_ONLY). */
+  testSubscriberIds       String[]      @default([])
+  /** Subscriber IDs de ManyChat de gerencia; vacío = los pendientes quedan solo en el panel. */
+  managementSubscriberIds String[]      @default([])
+  updatedBy               String?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("assistant_settings")
+}
+
+model Conversation {
+  id                   String  @id @default(cuid())
+  companyId            String
+  channel              String  @default("whatsapp")
+  manyChatSubscriberId String
+  phone                String?
+  name                 String?
+  /** Simulación o contacto de prueba: nunca crea leads ni asignaciones reales. */
+  isTest               Boolean @default(false)
+
+  control          ConversationControl @default(AI)
+  controlReason    String?
+  controlChangedAt DateTime?
+  controlChangedBy String?
+
+  handoffState  ConversationHandoffState @default(NONE)
+  handoffReason String?
+  handoffAt     DateTime?
+  leadId        String?
+
+  primaryIntent      ConversationIntent   @default(UNKNOWN)
+  secondaryIntents   ConversationIntent[] @default([])
+  /** Requisitos: { campo: { value, status: "known" | "declined" } } — ausencia = desconocido. */
+  facts              Json?
+  /** Propiedades mencionadas: [{ publicId, verified, title, url, source }]. */
+  properties         Json?
+  missingData        String[]             @default([])
+  summary            String?
+  clarificationCount Int                  @default(0)
+  /** Atribución de campaña/origen (se conserva aunque la intención sea otra). */
+  campaignRef        String?
+
+  // --- Procesamiento persistente ---
+  lastSeq             Int       @default(0)
+  /** Último mensaje entrante incorporado a un turno completado. */
+  processedSeq        Int       @default(0)
+  burstStartedAt      DateTime?
+  processAfter        DateTime?
+  leaseOwner          String?
+  leaseUntil          DateTime?
+  consecutiveFailures Int       @default(0)
+  lastError           String?
+
+  lastInboundAt  DateTime?
+  lastOutboundAt DateTime?
+  lastActivityAt DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company     Company                  @relation(fields: [companyId], references: [id])
+  lead        Lead?                    @relation(fields: [leadId], references: [id])
+  messages    ConversationMessage[]
+  turns       ConversationTurn[]
+  escalations ConversationEscalation[]
+
+  @@unique([companyId, channel, manyChatSubscriberId])
+  @@index([companyId, lastActivityAt])
+  @@index([companyId, phone])
+  @@index([processAfter])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String                    @id @default(cuid())
+  conversationId String
+  companyId      String
+  seq            Int
+  role           ConversationMessageRole
+  text           String
+  status         ConversationMessageStatus
+  /** Clave de deduplicación de la entrega (ID del canal o huella estable); null = sin dedupe posible. */
+  dedupeKey      String?
+  turnId         String?
+  attempts       Int                       @default(0)
+  lastError      String?
+  sentAt         DateTime?
+  metadata       Json?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@unique([conversationId, seq])
+  @@unique([conversationId, dedupeKey])
+  @@index([status])
+  @@map("conversation_messages")
+}
+
+/** Traza de cada interpretación: herramientas usadas y consumo, sin razonamiento del modelo ni secretos. */
+model ConversationTurn {
+  id             String                 @id @default(cuid())
+  conversationId String
+  fromSeq        Int
+  toSeq          Int
+  status         ConversationTurnStatus @default(RUNNING)
+  model          String?
+  inputTokens    Int?
+  outputTokens   Int?
+  toolCalls      Json?
+  error          String?
+  durationMs     Int?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_turns")
+}
+
+model ConversationEscalation {
+  id             String           @id @default(cuid())
+  companyId      String
+  conversationId String
+  type           EscalationType
+  status         EscalationStatus @default(PENDING)
+  reason         String
+  notifiedAt     DateTime?
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([companyId, status])
+  @@index([conversationId])
+  @@map("conversation_escalations")
+}
+
+/** Índice local del inventario publicado de EasyBroker. La verdad sigue en EasyBroker: se consulta el detalle antes de afirmar datos. */
+model PropertyCacheEntry {
+  id           String   @id @default(cuid())
+  companyId    String
+  publicId     String
+  title        String
+  propertyType String?
+  location     String?
+  operations   Json?
+  bedrooms     Int?
+  bathrooms    Float?
+  publicUrl    String?
+  searchText   String
+  ebUpdatedAt  String?
+  published    Boolean  @default(true)
+  syncedAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, publicId])
+  @@index([companyId, published])
+  @@map("property_cache")
 }
