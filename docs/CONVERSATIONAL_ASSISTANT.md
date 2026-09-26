@@ -140,10 +140,25 @@ Automatización nueva **"Asistente IA - Entrada"** (`content20260926215340_15816
    - Mapeo de respuesta `$.handled` → `IA_Handled` (ManyChat solo habilita
      el mapeo después de una "Probar solicitud" exitosa).
 2. Condición `IA_Handled es true` → fin (el backend responde por API).
-   Si no → "Iniciar otra automatización: innova" (flujo anterior).
+   Si no → mensaje "¡Bienvenido a C21 Inova!" → "Iniciar otra automatización:
+   innova" (exactamente lo que hacía la respuesta predeterminada antes).
 
-Disparador: Default Reply de WhatsApp apunta a esta automatización (hoy
-está en la automatización "innova").
+Disparador: ManyChat solo permite la respuesta predeterminada de WhatsApp
+en la automatización "Whatsapp Default Reply" (`content20260727205416_646210`,
+frecuencia "every time"). Ahí su salida "Entonces" se reconectó a:
+Acciones (`IA_Handled=false`) → "Iniciar otra automatización: Asistente IA -
+Entrada". Los nodos anteriores (mensaje de bienvenida → innova) siguen en el
+lienzo, desconectados.
+
+**Rollback en ManyChat**: en "Whatsapp Default Reply", conectar "Entonces"
+otra vez al nodo "Enviar mensaje ¡Bienvenido a C21 Inova!" y publicar.
+Sin tocar ManyChat basta con modo OFF: el backend responde `handled=false`
+y el cliente recibe la bienvenida + innova igual que antes.
+
+Estado al 26-sep-2026: backend en TEST_ONLY con el contacto de prueba
+1016264146. Palabras clave aún activas (hola/buen/noche…, "EB-",
+"ninguna…") siguen yendo al flujo anterior también para el contacto de
+prueba hasta el corte a ON.
 
 ### Activación gradual
 
