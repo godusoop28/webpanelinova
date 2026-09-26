@@ -81,3 +81,32 @@ describe("PropertySearchWebhookSchema", () => {
     expect(PropertySearchWebhookSchema.safeParse({}).success).toBe(false);
   });
 });
+
+describe("ManyChatMessageWebhookSchema", () => {
+  it("acepta el formato {Full Contact Data} de ManyChat", async () => {
+    const { ManyChatMessageWebhookSchema } = await import("@/lib/schemas");
+    const parsed = ManyChatMessageWebhookSchema.parse({
+      id: "123456789",
+      name: "Ana López",
+      last_input_text: "Hola, busco casa",
+      whatsapp_phone: "+5213312345678",
+      phone: "",
+      last_interaction: "2026-09-26T10:00:00-06:00",
+      custom_fields: {},
+    });
+    expect(parsed).toMatchObject({
+      subscriber_id: "123456789",
+      text: "Hola, busco casa",
+      phone: "+5213312345678",
+      name: "Ana López",
+      last_interaction: "2026-09-26T10:00:00-06:00",
+    });
+  });
+
+  it("acepta la forma plana e ignora variables sin reemplazar", async () => {
+    const { ManyChatMessageWebhookSchema } = await import("@/lib/schemas");
+    const parsed = ManyChatMessageWebhookSchema.parse({ subscriber_id: 42, text: "hola", phone: "{{phone}}" });
+    expect(parsed).toMatchObject({ subscriber_id: "42", text: "hola", phone: undefined });
+    expect(ManyChatMessageWebhookSchema.safeParse({ subscriber_id: "abc" }).success).toBe(false);
+  });
+});

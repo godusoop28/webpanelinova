@@ -128,18 +128,22 @@ Variables de entorno nuevas (todas opcionales):
 
 ## ManyChat
 
-Automatización nueva **"Asistente IA - Entrada"**:
+Automatización nueva **"Asistente IA - Entrada"** (`content20260926215340_158169`):
 
-1. External Request `POST https://<dominio>/api/webhooks/manychat/message`,
-   header `x-inova-secret: <INTEGRATION_SECRET>`, body:
-   ```json
-   {"subscriber_id":"{{user_id}}","text":"{{last_input_text}}","phone":"{{phone}}","name":"{{full_name}}","last_interaction":"{{last_interaction}}"}
-   ```
-   Mapeo de respuesta `$.handled` → campo `IA_Handled`.
-2. Condición `IA_Handled = true` → fin (el backend responde por API).
-   Si no (o si la petición falla) → "Iniciar automatización: innova" (flujo anterior).
+1. Acciones:
+   - Establecer campo `IA_Handled` (id 15006733) = `false` (si la petición
+     falla, la condición cae al flujo anterior).
+   - Solicitud externa `POST https://webpanelinova-nu.vercel.app/api/webhooks/manychat/message`,
+     encabezado `x-inova-secret: <INTEGRATION_SECRET>`, cuerpo `{Full Contact Data}`
+     (variable de ManyChat; sintaxis de llave simple). El backend acepta ese
+     objeto (id, name, last_input_text, whatsapp_phone, last_interaction) o la forma plana.
+   - Mapeo de respuesta `$.handled` → `IA_Handled` (ManyChat solo habilita
+     el mapeo después de una "Probar solicitud" exitosa).
+2. Condición `IA_Handled es true` → fin (el backend responde por API).
+   Si no → "Iniciar otra automatización: innova" (flujo anterior).
 
-Disparador: Default Reply de WhatsApp apunta a esta automatización.
+Disparador: Default Reply de WhatsApp apunta a esta automatización (hoy
+está en la automatización "innova").
 
 ### Activación gradual
 

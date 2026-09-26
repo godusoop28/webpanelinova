@@ -156,13 +156,39 @@ const optionalManyChatText = z
     return text && !/^\{\{.*\}\}$/.test(text) ? text : undefined;
   });
 
-export const ManyChatMessageWebhookSchema = z.object({
-  subscriber_id: z.union([z.string(), z.number()]).transform((value) => String(value).trim()).pipe(z.string().regex(/^\d{1,20}$/, "subscriber_id inválido.")),
-  text: optionalManyChatText,
-  phone: optionalManyChatText,
-  name: optionalManyChatText,
-  message_id: optionalManyChatText,
-  last_interaction: optionalManyChatText,
-});
+/**
+ * Acepta dos formas:
+ * - Plana: { subscriber_id, text, phone, name, message_id, last_interaction }.
+ * - "{Full Contact Data}" de ManyChat (lo que envía la automatización
+ *   "Asistente IA - Entrada"): el objeto Subscriber documentado en la API
+ *   (id, name, last_input_text, whatsapp_phone, phone, last_interaction…).
+ */
+function fromFullContactData(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const body = raw as Record<string, unknown>;
+  if (body.subscriber_id !== undefined || body.id === undefined) return body;
+  return {
+    subscriber_id: body.id,
+    text: body.last_input_text,
+    phone: body.whatsapp_phone || body.phone,
+    name: body.name,
+    last_interaction: body.last_interaction,
+  };
+}
+
+export const ManyChatMessageWebhookSchema = z.preprocess(
+  fromFullContactData,
+  z.object({
+    subscriber_id: z
+      .union([z.string(), z.number()])
+      .transform((value) => String(value).trim())
+      .pipe(z.string().regex(/^\d{1,20}$/, "subscriber_id inválido.")),
+    text: optionalManyChatText,
+    phone: optionalManyChatText,
+    name: optionalManyChatText,
+    message_id: optionalManyChatText,
+    last_interaction: optionalManyChatText,
+  })
+);
 
 export type ManyChatMessageWebhookPayload = z.infer<typeof ManyChatMessageWebhookSchema>;
