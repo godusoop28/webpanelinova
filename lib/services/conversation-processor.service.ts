@@ -10,6 +10,7 @@ import {
   findConversationsDueForProcessing,
   releaseLease,
   tryClaimLease,
+  isSimulatorConversation,
 } from "@/lib/services/conversation.service";
 import { getAssistantSettings, assistantHandles } from "@/lib/services/assistant-settings.service";
 import { runAssistantTurn, storedFacts, type HistoryMessage } from "@/lib/services/conversation-agent.service";
@@ -79,7 +80,7 @@ export async function processConversation(conversationId: string, budgetMs = 50_
       }
 
       const settings = await getAssistantSettings(conversation.companyId);
-      if (conversation.control !== "AI" || (!conversation.isTest && !assistantHandles(settings, conversation.manyChatSubscriberId))) {
+      if (conversation.control !== "AI" || (!isSimulatorConversation(conversation) && !assistantHandles(settings, conversation.manyChatSubscriberId))) {
         // Otra persona/el flujo anterior atiende: no se responde ni se reintenta.
         await prisma.conversation.updateMany({
           where: { id: conversationId, lastSeq: conversation.lastSeq },
@@ -205,7 +206,7 @@ async function runTurn(conversation: Conversation): Promise<"completed" | "super
           seq,
           role: "ASSISTANT",
           text: reply,
-          status: conversation.isTest ? "SIMULATED" : "QUEUED",
+          status: isSimulatorConversation(conversation) ? "SIMULATED" : "QUEUED",
           turnId: turn.id,
         },
       });
@@ -290,7 +291,7 @@ async function handleTurnFailure(conversation: Conversation, turnId: string, mes
         seq,
         role: "ASSISTANT",
         text: FALLBACK_REPLY,
-        status: conversation.isTest ? "SIMULATED" : "QUEUED",
+        status: isSimulatorConversation(conversation) ? "SIMULATED" : "QUEUED",
         turnId,
         metadata: { fallback: true },
       },
@@ -335,7 +336,7 @@ export async function flushOutbox(conversationId: string): Promise<void> {
 
 /** true si el mensaje quedó en un estado final (enviado, fallido o incierto) y se puede seguir con el siguiente. */
 async function sendOne(conversation: Conversation, message: ConversationMessage): Promise<boolean> {
-  if (conversation.isTest) {
+  if (isSimulatorConversation(conversation)) {
     await prisma.conversationMessage.update({ where: { id: message.id }, data: { status: "SIMULATED" } });
     return true;
   }

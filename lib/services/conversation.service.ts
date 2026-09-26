@@ -8,6 +8,19 @@ import { assistantHandles, getAssistantSettings, isTestSubscriber } from "@/lib/
 
 export const MAX_INBOUND_TEXT = 4000;
 
+/** Prefijo de los contactos creados por el simulador del panel. */
+export const SIMULATOR_SUBSCRIBER_PREFIX = "sim-";
+
+/**
+ * Dos conceptos distintos:
+ * - isTest (contacto de prueba o simulador): nunca crea leads ni mueve la ruleta.
+ * - simulador: además nunca envía nada por WhatsApp.
+ * Un contacto de prueba real (TEST_ONLY) SÍ recibe las respuestas en su WhatsApp.
+ */
+export function isSimulatorConversation(conversation: { manyChatSubscriberId: string }): boolean {
+  return conversation.manyChatSubscriberId.startsWith(SIMULATOR_SUBSCRIBER_PREFIX);
+}
+
 export interface InboundMessageInput {
   subscriberId: string;
   text: string;

@@ -339,6 +339,24 @@ describe("control humano y modos", () => {
     expect(doubles.sent).toHaveLength(1);
   });
 
+  it("contacto de prueba real (TEST_ONLY) SÍ recibe la respuesta; el simulador del panel no envía nada", async () => {
+    const tester = nextSubscriber();
+    await setSettings({ mode: "TEST_ONLY", testSubscriberIds: [tester] });
+    await m.ingest(companyId, { subscriberId: tester, text: "tengo una casa que quiero vender" });
+    const conv = await conversationOf(tester);
+    expect(conv.isTest).toBe(true);
+    await m.processConversation(conv.id, 60_000);
+    expect(doubles.sent).toEqual([{ subscriberId: tester, text: "Respuesta de prueba" }]);
+
+    doubles.sent = [];
+    const sim = `sim-${"a".repeat(12)}`;
+    await m.ingest(companyId, { subscriberId: sim, text: "hola", simulated: true });
+    const simConv = await conversationOf(sim);
+    await m.processConversation(simConv.id, 60_000);
+    expect(doubles.sent).toEqual([]);
+    expect((await conversationOf(sim)).messages.find((x) => x.role === "ASSISTANT")?.status).toBe("SIMULATED");
+  });
+
   it("modo OFF: se guarda pero handled=false (ManyChat sigue con el flujo anterior); TEST_ONLY solo atiende pruebas", async () => {
     const sub = nextSubscriber();
     await setSettings({ mode: "OFF" });
