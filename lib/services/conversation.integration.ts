@@ -30,6 +30,9 @@ const doubles = vi.hoisted(() => ({
   agentImpl: null as null | ((input: { conversation: Conversation; history: { role: string; text: string }[] }) => Promise<unknown>),
   sent: [] as { subscriberId: string; text: string }[],
   sendImpl: null as null | ((subscriberId: string, text: string) => Promise<void>),
+  fieldsSet: [] as { subscriberId: string; fields: { fieldId: number; value: string }[] }[],
+  flowsSent: [] as { subscriberId: string; flowNs: string }[],
+  subscriberPhone: "" as string,
 }));
 
 vi.mock("@/lib/db", async () => {
@@ -62,8 +65,15 @@ vi.mock("@/lib/services/manychat.service", async () => {
       doubles.sent.push({ subscriberId, text });
     },
     notifyAdvisor: async () => ({ customFieldsUpdated: true }),
-    setCustomFields: async () => undefined,
+    setCustomFields: async (subscriberId: string, fields: { fieldId: number; value: string }[]) => {
+      doubles.fieldsSet.push({ subscriberId, fields });
+    },
     sendFlow: async () => undefined,
+    sendFlowOnce: async (subscriberId: string, flowNs: string) => {
+      doubles.flowsSent.push({ subscriberId, flowNs });
+    },
+    getSubscriberInfo: async (id: string) => ({ id, whatsapp_phone: doubles.subscriberPhone }),
+    findSubscriberByPhone: async () => null,
   };
 });
 
@@ -159,7 +169,8 @@ beforeAll(async () => {
   // Base local de prueba (verificado arriba): se parte de cero en cada corrida.
   await m.prisma.$executeRawUnsafe(
     `TRUNCATE conversation_messages, conversation_turns, conversation_escalations, conversations, assistant_settings, property_cache,
-      integration_jobs, audit_logs, lead_assignments, property_inquiries, portal_listings, leads, advisors RESTART IDENTITY CASCADE`
+      integration_jobs, audit_logs, lead_assignments, property_inquiries, portal_listings, property_report_deliveries, property_events,
+      property_recipients, property_report_settings, leads, advisors RESTART IDENTITY CASCADE`
   );
   const company = await m.prisma.company.upsert({
     where: { slug: "century21-innova" },
@@ -706,5 +717,153 @@ describe("consultas por propiedad", () => {
       ["EB-AA0001", 5],
       ["EB-BB0002", 1],
     ]);
+  });
+});
+
+describe("reportes a propietarios y avisos de actividad", () => {
+  const FRIDAY_10AM = new Date("2026-09-25T16:00:00Z"); // viernes 10:00 CDMX
+  let svc: typeof import("@/lib/services/property-report.service");
+
+  beforeAll(async () => {
+    svc = await import("@/lib/services/property-report.service");
+    await m.prisma.propertyReportSettings.upsert({
+      where: { companyId },
+      create: { companyId },
+      update: {},
+    });
+  });
+
+  async function configure(enabled: boolean) {
+    await m.prisma.propertyReportSettings.update({
+      where: { companyId },
+      data: {
+        weeklyEnabled: enabled,
+        weeklyHour: 10,
+        weeklyMinute: 0,
+        eventNotificationsEnabled: enabled,
+        manyChatWeeklyFlowNs: "flow_semanal",
+        manyChatEventFlowNs: "flow_evento",
+        manyChatFieldIds: {
+          weekly: { property: 1, period: 2, weekLeads: 3, cumulative: 4, sources: 5, activity: 6 },
+          event: { property: 7, headline: 8, detail: 9 },
+        },
+      },
+    });
+  }
+
+  async function authorizedRecipient(publicId: string, phone: string, flags = { weeklyReport: true, eventNotifications: true }) {
+    return m.prisma.propertyRecipient.create({
+      data: {
+        companyId,
+        publicId,
+        name: "Dueña",
+        phoneE164: phone,
+        relation: "propietario",
+        consentStatus: "GRANTED",
+        consentEvidence: "Autorizó por escrito en el contrato.",
+        verifiedAt: new Date(),
+        manyChatSubscriberId: "777",
+        ...flags,
+      },
+    });
+  }
+
+  it("R: sin autorización/verificación no se encola ni se envía nada", async () => {
+    await configure(true);
+    await m.prisma.propertyRecipient.create({
+      data: { companyId, publicId: "EB-RR0001", name: "Sin autorizar", phoneE164: "+523300009991", relation: "propietario", weeklyReport: true },
+    });
+    const result = await svc.enqueueWeeklyReports(companyId, FRIDAY_10AM);
+    expect(await m.prisma.propertyReportDelivery.count({ where: { publicId: "EB-RR0001" } })).toBe(0);
+    expect(result.skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it("O: el cron repetido del viernes no duplica el reporte; antes de la hora no encola", async () => {
+    await configure(true);
+    await authorizedRecipient("EB-OO0001", "+523300009992");
+    const before = await svc.runPropertyReportsCron(companyId, new Date("2026-09-25T15:30:00Z")); // 09:30
+    expect(before.weekly).toBeNull();
+    await svc.runPropertyReportsCron(companyId, FRIDAY_10AM);
+    await svc.runPropertyReportsCron(companyId, new Date("2026-09-25T16:15:00Z"));
+    await Promise.all([svc.enqueueWeeklyReports(companyId, FRIDAY_10AM), svc.enqueueWeeklyReports(companyId, FRIDAY_10AM)]);
+    const deliveries = await m.prisma.propertyReportDelivery.findMany({ where: { publicId: "EB-OO0001" } });
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0].dedupeKey).toMatch(/:2026-09-18$/);
+    // En modo shadow no sale nada real: queda "No enviado" con el motivo.
+    expect(deliveries[0].status).toBe("SKIPPED");
+    expect(deliveries[0].lastError).toMatch(/AUTOMATION_MODE/);
+    expect(deliveries[0].text).toMatch(/no se registraron personas interesadas/);
+  });
+
+  it("envío real (live): campos + flujo; SENT solo si ManyChat aceptó", async () => {
+    await configure(true);
+    const recipient = await authorizedRecipient("EB-SS0001", "+523300009993");
+    process.env.AUTOMATION_MODE = "live";
+    try {
+      const status = await svc.sendTestReport({ companyId, recipientId: recipient.id, by: "admin@test", now: FRIDAY_10AM });
+      expect(status).toBe("SENT");
+    } finally {
+      delete process.env.AUTOMATION_MODE;
+    }
+    expect(doubles.fieldsSet.at(-1)?.subscriberId).toBe("777");
+    expect(doubles.fieldsSet.at(-1)?.fields.map((f) => f.fieldId)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(doubles.flowsSent.at(-1)).toEqual({ subscriberId: "777", flowNs: "flow_semanal" });
+    expect((await m.prisma.propertyRecipient.findUniqueOrThrow({ where: { id: recipient.id } })).lastSendStatus).toBe("SENT");
+  });
+
+  it("P/Q: guardar el mismo evento dos veces no duplica avisos; programado ≠ realizado", async () => {
+    await configure(true);
+    await authorizedRecipient("EB-PP0001", "+523300009994");
+    const input = {
+      publicId: "EB-PP0001",
+      type: "OPEN_HOUSE" as const,
+      status: "SCHEDULED" as const,
+      title: "Open House",
+      description: "De 11 a 14 h",
+      scheduledAt: new Date("2026-10-03T17:00:00Z"),
+      completedAt: null,
+      outcome: null,
+      notifyRecipients: true,
+    };
+    const { event, notices } = await svc.createPropertyEvent(companyId, input, "admin@test");
+    expect(notices).toBe(1);
+    // Mismo contenido otra vez: sin cambio relevante, sin aviso nuevo.
+    expect((await svc.updatePropertyEvent(companyId, event.id, input, "admin@test")).notices).toBe(0);
+    expect(await svc.enqueueEventNotices(await m.prisma.propertyEvent.findUniqueOrThrow({ where: { id: event.id } }))).toBe(0);
+    const scheduled = await m.prisma.propertyReportDelivery.findFirstOrThrow({ where: { eventId: event.id } });
+    expect(scheduled.text).toMatch(/programada para/);
+    expect(scheduled.text).not.toMatch(/realizada/);
+    // Marcarlo realizado sí es una versión nueva, con lo registrado.
+    const done = await svc.updatePropertyEvent(companyId, event.id, { ...input, status: "DONE", completedAt: new Date("2026-10-03T20:00:00Z"), outcome: "Asistieron 5 personas." }, "admin@test");
+    expect(done.notices).toBe(1);
+    const texts = (await m.prisma.propertyReportDelivery.findMany({ where: { eventId: event.id }, orderBy: { createdAt: "asc" } })).map((d) => d.text);
+    expect(texts[1]).toMatch(/realizada/);
+    expect(texts[1]).toMatch(/Asistieron 5 personas/);
+  });
+
+  it("un programado sin fecha o un resumen en un evento no realizado se rechazan", async () => {
+    const base = { publicId: "EB-PP0001", type: "SHOWING" as const, title: "Visita", description: null, completedAt: null, notifyRecipients: false };
+    await expect(svc.createPropertyEvent(companyId, { ...base, status: "SCHEDULED", scheduledAt: null, outcome: null }, "x")).rejects.toThrow();
+    await expect(svc.createPropertyEvent(companyId, { ...base, status: "SCHEDULED", scheduledAt: new Date(), outcome: "vino alguien" }, "x")).rejects.toThrow();
+  });
+
+  it("no reutiliza el teléfono de un prospecto como propietario sin confirmación explícita", async () => {
+    await m.prisma.lead.create({ data: { companyId, name: "Prospecto", phone: "+523300009995", interestType: "PROPERTY", source: "manychat_webhook" } });
+    const input = { publicId: "EB-PP0001", name: "X", phone: "3300009995", relation: "propietario", weeklyReport: true, eventNotifications: true, manyChatSubscriberId: null, notes: null };
+    await expect(svc.createRecipient(companyId, { ...input, confirmNotProspect: false }, "x")).rejects.toThrow(/prospecto/);
+    const created = await svc.createRecipient(companyId, { ...input, confirmNotProspect: true }, "x");
+    // Nace sin envíos habilitados hasta registrar autorización y verificar.
+    expect(created).toMatchObject({ weeklyReport: false, eventNotifications: false, consentStatus: "PENDING" });
+  });
+
+  it("verificación en ManyChat: el teléfono del contacto debe coincidir", async () => {
+    const recipient = await m.prisma.propertyRecipient.create({
+      data: { companyId, publicId: "EB-VV0001", name: "Dueño", phoneE164: "+523300009996", relation: "propietario", manyChatSubscriberId: "888" },
+    });
+    doubles.subscriberPhone = "+523300009996";
+    expect((await svc.verifyRecipient(companyId, recipient.id, "x")).ok).toBe(true);
+    doubles.subscriberPhone = "+523311111111";
+    expect((await svc.verifyRecipient(companyId, recipient.id, "x")).ok).toBe(false);
+    expect((await m.prisma.propertyRecipient.findUniqueOrThrow({ where: { id: recipient.id } })).verifiedAt).toBeNull();
   });
 });

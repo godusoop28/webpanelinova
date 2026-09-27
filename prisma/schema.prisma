@@ -103,6 +103,10 @@ model Company {
   propertyCache     PropertyCacheEntry[]
   portalListings    PortalListing[]
   propertyInquiries PropertyInquiry[]
+  propertyRecipients     PropertyRecipient[]
+  propertyEvents         PropertyEvent[]
+  propertyDeliveries     PropertyReportDelivery[]
+  propertyReportSettings PropertyReportSettings?
 
   @@map("companies")
 }
@@ -724,4 +728,188 @@ model PropertyInquiry {
   @@index([companyId, day])
   @@index([companyId, publicId])
   @@map("property_inquiries")
+}
+
+// ---------------------------------------------------------------------------
+// Reportes por propiedad y avisos a propietarios
+// Ver docs/PROPERTY_REPORTS.md. Los envíos reales están apagados hasta
+// tener destinatario verificado, autorización, horario y plantilla aprobada.
+// ---------------------------------------------------------------------------
+
+enum RecipientConsent {
+  PENDING
+  GRANTED
+  REVOKED
+}
+
+/**
+ * Destinatario de seguimiento de un inmueble (propietario o quien éste
+ * designe). Separado de los prospectos: nunca se llena a partir de un lead.
+ */
+model PropertyRecipient {
+  id                   String           @id @default(cuid())
+  companyId            String
+  publicId             String
+  name                 String
+  /** WhatsApp en E.164. */
+  phoneE164            String
+  /** propietario | copropietario | representante | administrador | otro */
+  relation             String
+  weeklyReport         Boolean          @default(false)
+  eventNotifications   Boolean          @default(false)
+  consentStatus        RecipientConsent @default(PENDING)
+  /** Cómo y cuándo autorizó recibir mensajes (texto libre del equipo). */
+  consentEvidence      String?
+  consentAt            DateTime?
+  consentRecordedBy    String?
+  manyChatSubscriberId String?
+  /** Se comprobó en ManyChat que el subscriber corresponde a este teléfono. */
+  verifiedAt           DateTime?
+  verifiedBy           String?
+  verificationNote     String?
+  lastSentAt           DateTime?
+  lastSendStatus       String?
+  lastError            String?
+  active               Boolean          @default(true)
+  notes                String?
+  createdBy            String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  company    Company                  @relation(fields: [companyId], references: [id])
+  deliveries PropertyReportDelivery[]
+
+  @@unique([companyId, publicId, phoneE164])
+  @@index([companyId, publicId])
+  @@map("property_recipients")
+}
+
+enum PropertyEventType {
+  SHOWING
+  OPEN_HOUSE
+  APPOINTMENT
+  OFFER
+  PRICE_UPDATE
+  MARKETING
+  OTHER
+}
+
+enum PropertyEventStatus {
+  SCHEDULED
+  DONE
+  CANCELLED
+}
+
+/**
+ * Actividad de un inmueble. La API de EasyBroker no expone citas,
+ * actividades ni Open House (verificado en su documentación oficial el
+ * 27-sep-2026), así que hoy se registran en el panel (origin "panel"). El
+ * campo externalId queda para una fuente futura, sin duplicados.
+ */
+model PropertyEvent {
+  id                String              @id @default(cuid())
+  companyId         String
+  publicId          String
+  type              PropertyEventType
+  status            PropertyEventStatus @default(SCHEDULED)
+  title             String
+  description       String?
+  scheduledAt       DateTime?
+  completedAt       DateTime?
+  /** Solo para eventos realizados: lo que realmente se registró (sin inventar asistentes ni acuerdos). */
+  outcome           String?
+  /** panel | easybroker */
+  origin            String              @default("panel")
+  externalId        String?
+  /** Sube con cada cambio relevante (reprogramación, realizado, cancelado): una notificación por versión. */
+  version           Int                 @default(1)
+  notifyRecipients  Boolean             @default(true)
+  createdBy         String?
+  updatedBy         String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  company    Company                  @relation(fields: [companyId], references: [id])
+  deliveries PropertyReportDelivery[]
+
+  @@unique([companyId, origin, externalId])
+  @@index([companyId, publicId])
+  @@map("property_events")
+}
+
+enum DeliveryKind {
+  WEEKLY_REPORT
+  EVENT_NOTICE
+  TEST
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  UNCERTAIN
+  SKIPPED
+}
+
+/** Envío persistente a un destinatario. dedupeKey evita duplicados por reintentos o ejecuciones repetidas del cron. */
+model PropertyReportDelivery {
+  id            String         @id @default(cuid())
+  companyId     String
+  recipientId   String
+  publicId      String
+  kind          DeliveryKind
+  /** weekly:<destinatario>:<propiedad>:<inicio> | event:<evento>:v<versión>:<destinatario> | test:<uuid> */
+  dedupeKey     String         @unique
+  periodStart   DateTime?
+  periodEnd     DateTime?
+  eventId       String?
+  status        DeliveryStatus @default(PENDING)
+  attempts      Int            @default(0)
+  nextAttemptAt DateTime       @default(now())
+  lastError     String?
+  /** Variables calculadas en el backend (conteos, periodo, actividad). */
+  payload       Json
+  /** Vista previa del texto tal como se envía. */
+  text          String
+  sentAt        DateTime?
+  createdBy     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  company   Company           @relation(fields: [companyId], references: [id])
+  recipient PropertyRecipient @relation(fields: [recipientId], references: [id])
+  event     PropertyEvent?    @relation(fields: [eventId], references: [id])
+
+  @@index([status, nextAttemptAt])
+  @@index([companyId, publicId, createdAt])
+  @@map("property_report_deliveries")
+}
+
+/** Configuración de reportes y avisos (no secreta). Todo apagado por defecto. */
+model PropertyReportSettings {
+  id                        String   @id @default(cuid())
+  companyId                 String   @unique
+  weeklyEnabled             Boolean  @default(false)
+  /** 5 = viernes (ISO: 1 lunes … 7 domingo). */
+  weeklyWeekday             Int      @default(5)
+  /** Hora local de envío; null = sin confirmar (el envío no se programa). */
+  weeklyHour                Int?
+  weeklyMinute              Int      @default(0)
+  timeZone                  String   @default("America/Mexico_City")
+  eventNotificationsEnabled Boolean  @default(false)
+  /** Flujos de ManyChat con la plantilla de WhatsApp aprobada (fuera de la ventana de 24 h). */
+  manyChatWeeklyFlowNs      String?
+  manyChatEventFlowNs       String?
+  /** IDs de los campos personalizados de ManyChat que llenan las variables de la plantilla. */
+  manyChatFieldIds          Json?
+  /** Nota operativa (p. ej. "plantilla enviada a aprobación el …"). */
+  templateNote              String?
+  updatedBy                 String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("property_report_settings")
 }

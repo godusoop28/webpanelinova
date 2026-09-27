@@ -44,7 +44,8 @@ export type AuditEventType =
   | "LEAD_STATUS_CHANGED"
   | "LEAD_RETRY_REQUESTED"
   | "INTEGRATION_JOB_RETRIED"
-  | "INTEGRATION_JOB_FAILED";
+  | "INTEGRATION_JOB_FAILED"
+  | "OWNER_REPORT_SENT";
 
 export interface AuditEventInput {
   companyId?: string;

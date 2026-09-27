@@ -8,6 +8,7 @@ export type PanelSection =
   | "conversaciones"
   | "asesores"
   | "reportes"
+  | "propiedades"
   | "usuarios"
   | "integraciones"
   | "testing"
@@ -19,6 +20,7 @@ const SECTION_ACCESS: Record<PanelSection, Role[]> = {
   conversaciones: ["ADMIN", "DIRECCION"],
   asesores: ["ADMIN", "DIRECCION"],
   reportes: ["ADMIN", "DIRECCION", "CONSULTA"],
+  propiedades: ["ADMIN", "DIRECCION", "CONSULTA"],
   usuarios: ["ADMIN"],
   integraciones: ["ADMIN"],
   testing: ["ADMIN"],
@@ -31,7 +33,7 @@ export function canAccessSection(role: Role | undefined, section: PanelSection):
 }
 
 export function isReadOnly(role: Role | undefined, section: PanelSection): boolean {
-  if (section === "reportes" && role === "CONSULTA") return true;
+  if ((section === "reportes" || section === "propiedades") && role === "CONSULTA") return true;
   return false;
 }
 
@@ -48,6 +50,16 @@ export function canConfigureAssistant(role: Role | undefined): boolean {
   return role === "ADMIN";
 }
 
+/** Destinatarios (datos del propietario) y actividades: ADMIN y DIRECCION. CONSULTA solo ve métricas. */
+export function canManagePropertyFollowUp(role: Role | undefined): boolean {
+  return role === "ADMIN" || role === "DIRECCION";
+}
+
+/** Horario, flujos, plantillas y envíos de prueba: solo ADMIN. */
+export function canConfigurePropertyReports(role: Role | undefined): boolean {
+  return role === "ADMIN";
+}
+
 export function canEditAdvisors(role: Role | undefined): boolean {
   return role === "ADMIN" || role === "DIRECCION";
 }
@@ -58,6 +70,7 @@ export const ALL_SECTIONS: { section: PanelSection; label: string; href: string 
   { section: "conversaciones", label: "Conversaciones", href: "/conversaciones" },
   { section: "asesores", label: "Asesores", href: "/asesores" },
   { section: "reportes", label: "Reportes", href: "/reportes" },
+  { section: "propiedades", label: "Propiedades", href: "/propiedades" },
   { section: "usuarios", label: "Usuarios", href: "/usuarios" },
   { section: "integraciones", label: "Integraciones", href: "/integraciones" },
   { section: "testing", label: "Diagnóstico interno", href: "/testing" },

@@ -100,6 +100,26 @@ export interface ManyChatSubscriberInfo {
   tags?: { id: number; name: string }[];
 }
 
+/**
+ * sendFlow SIN reintento interno: un timeout es ambiguo (el flujo con la
+ * plantilla pudo haberse enviado) y reintentarlo duplicaría el reporte.
+ * Quien llama marca el envío como incierto.
+ */
+export async function sendFlowOnce(subscriberId: string, flowNs: string): Promise<void> {
+  await manyChatRequest({ path: "/fb/sending/sendFlow", body: { subscriber_id: Number(subscriberId), flow_ns: flowNs }, timeoutMs: 12000 });
+}
+
+/** GET /fb/subscriber/findBySystemField?phone= (documentado en la API de ManyChat). */
+export async function findSubscriberByPhone(phoneE164: string): Promise<ManyChatSubscriberInfo | null> {
+  const result = await manyChatRequest<{ data?: ManyChatSubscriberInfo | ManyChatSubscriberInfo[] }>({
+    method: "GET",
+    path: "/fb/subscriber/findBySystemField",
+    query: { phone: phoneE164 },
+  });
+  const data = Array.isArray(result.data) ? result.data[0] : result.data;
+  return data ?? null;
+}
+
 export async function getSubscriberInfo(subscriberId: string): Promise<ManyChatSubscriberInfo | null> {
   const result = await manyChatRequest<{ data?: ManyChatSubscriberInfo }>({
     method: "GET",

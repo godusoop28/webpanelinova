@@ -142,7 +142,13 @@ export async function ensureFreshCatalog(companyId: string, maxAgeMs = CACHE_MAX
     orderBy: { syncedAt: "desc" },
     select: { syncedAt: true },
   });
-  if (newest && Date.now() - newest.syncedAt.getTime() < maxAgeMs) return { synced: false };
+  if (newest && Date.now() - newest.syncedAt.getTime() < maxAgeMs) {
+    // Los anuncios de portales se agregaron después: si aún no hay, se traen ya.
+    if (!(await prisma.portalListing.findFirst({ where: { companyId }, select: { id: true } }))) {
+      await syncPortalListings(companyId).catch((error) => console.error("[CATALOG] anuncios de portales no sincronizados", error instanceof Error ? error.message : error));
+    }
+    return { synced: false };
+  }
   try {
     await syncPropertyCatalog(companyId);
   } catch (error) {

@@ -17,7 +17,7 @@ import {
 import { updateAssistantSettings } from "@/lib/services/assistant-settings.service";
 import { ingestInboundMessage } from "@/lib/services/conversation.service";
 import { flushOutbox, processConversation } from "@/lib/services/conversation-processor.service";
-import { syncPropertyCatalog } from "@/lib/services/property-catalog.service";
+import { syncPortalListings, syncPropertyCatalog } from "@/lib/services/property-catalog.service";
 
 export interface ConversationActionState {
   error?: string;
@@ -148,8 +148,12 @@ export async function saveAssistantSettingsAction(_prev: ConversationActionState
 export async function syncCatalogAction(): Promise<ConversationActionState> {
   await requireRole("ADMIN");
   try {
-    const summary = await syncPropertyCatalog(await getDefaultCompanyId());
-    return { success: `Inventario sincronizado: ${summary.total} publicadas, ${summary.detailsFetched} detalles actualizados, ${summary.unpublished} despublicadas.` };
+    const companyId = await getDefaultCompanyId();
+    const summary = await syncPropertyCatalog(companyId);
+    const portals = await syncPortalListings(companyId);
+    return {
+      success: `Inventario sincronizado: ${summary.total} publicadas, ${summary.detailsFetched} detalles actualizados, ${summary.unpublished} despublicadas; ${portals.saved} anuncios en portales.`,
+    };
   } catch (error) {
     return { error: errorMessage(error) };
   }

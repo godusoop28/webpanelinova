@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/conversations",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/property-reports",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

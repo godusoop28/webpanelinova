@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Building2,
   FlaskConical,
   LayoutDashboard,
   LineChart,
@@ -26,6 +27,7 @@ const ICONS: Record<PanelSection, typeof LayoutDashboard> = {
   conversaciones: MessagesSquare,
   asesores: UserSquare2,
   reportes: LineChart,
+  propiedades: Building2,
   usuarios: Users,
   integraciones: Plug,
   testing: FlaskConical,

@@ -38,6 +38,7 @@ historial — pero el sistema en producción no depende de ninguno de los dos.
 | `/conversaciones` | ADMIN, DIRECCION (config y simulador: ADMIN) | Asistente de WhatsApp: historial, intención, pendientes, pausar/reanudar IA |
 | `/asesores` | ADMIN, DIRECCION | Alta/edición/pausa de asesores, motor de asignación |
 | `/reportes` | ADMIN, DIRECCION, CONSULTA (solo lectura) | Desempeño por periodo/asesor |
+| `/propiedades` | ADMIN, DIRECCION, CONSULTA (solo lectura, sin contactos); configuración: ADMIN | Leads únicos por propiedad (semana/acumulado), procedencia, actividades, destinatarios y reporte de los viernes (ver `docs/PROPERTY_REPORTS.md`) |
 | `/usuarios` | ADMIN | Alta/edición/contraseña de cuentas del panel |
 | `/integraciones` | ADMIN | Estado de EasyBroker/ManyChat/OpenAI/base de datos |
 | `/configuracion` | ADMIN | Datos de cuenta y reglas de asignación |
