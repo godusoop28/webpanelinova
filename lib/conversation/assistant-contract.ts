@@ -156,7 +156,7 @@ export const OPENAI_TOOLS = [
     type: "function",
     name: "resolve_link",
     description:
-      "Intenta identificar la propiedad de un enlace que envió el cliente. Solo funciona con enlaces compatibles; si no se puede, lo indica.",
+      "Identifica la propiedad de un enlace que envió el cliente: EasyBroker, Mercado Libre, Vivanuncios, Inmuebles24, Lamudi, Facebook u otro portal. Lee el anuncio cuando el portal lo permite (título, precio, zona) y lo cruza con el inventario real; devuelve la propiedad, candidatas con nivel de confianza o que no está en inventario.",
     strict: true,
     parameters: {
       type: "object",

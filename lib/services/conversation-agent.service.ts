@@ -154,14 +154,32 @@ async function executeTool(state: TurnState, name: ToolName, rawArgs: unknown, c
       const resolution = await resolvePropertyLink(conversation.companyId, args.url);
       if (!resolution.ok) {
         state.trace.push({ name, ok: false, note: resolution.reason });
-        return { ok: false, reason: resolution.reason, hint: "Pide el código EB-, la colonia o una descripción, u ofrece ayuda de un asesor." };
+        return {
+          ok: false,
+          reason: resolution.reason,
+          listing_from_portal: resolution.listing ?? null,
+          hint:
+            resolution.reason === "not_in_inventory"
+              ? "El anuncio no coincide con ninguna propiedad del inventario de Century 21 Innova (puede ser de otra inmobiliaria). Dilo con honestidad, sin afirmar que no existe; ofrece buscar opciones similares por zona/precio con search_properties o que un asesor le ayude."
+              : "No se pudo leer el enlace. Pide el código EB-, la colonia o una descripción, u ofrece ayuda de un asesor.",
+        };
       }
       if (resolution.publicId === null) {
         for (const candidate of resolution.candidates) {
           state.verified.set(candidate.public_id, { publicId: candidate.public_id, title: candidate.title, url: candidate.url });
         }
-        state.trace.push({ name, ok: true, note: `ambiguo: ${resolution.candidates.length} candidatos` });
-        return { ok: true, identified: false, candidates: resolution.candidates };
+        state.trace.push({ name, ok: true, note: `${resolution.listing?.source ?? "portal"}: ${resolution.candidates.length} candidato(s), confianza ${resolution.confidence}` });
+        return {
+          ok: true,
+          identified: false,
+          confidence: resolution.confidence,
+          listing_from_portal: resolution.listing,
+          candidates: resolution.candidates,
+          note:
+            resolution.listing?.source === "url_words"
+              ? "El portal no deja leer la página; solo se usaron las palabras del enlace. No afirmes cuál es: muestra las opciones y pregunta, o pide precio/colonia."
+              : "No es una coincidencia inequívoca. Muestra hasta 3 opciones (título, código y precio de NUESTRA ficha) y pregunta cuál es; si ninguna encaja, puede ser de otra inmobiliaria.",
+        };
       }
       const lookup = await lookupProperty(resolution.publicId);
       if (!lookup.ok) {
@@ -173,7 +191,16 @@ async function executeTool(state: TurnState, name: ToolName, rawArgs: unknown, c
       state.trace.push({ name, ok: true, note: `${view.public_id} vía ${resolution.via}` });
       const { agent_email: _omit, ...publicData } = view;
       void _omit;
-      return { ok: true, identified: true, property: publicData };
+      return {
+        ok: true,
+        identified: true,
+        property: publicData,
+        listing_from_portal: resolution.listing ?? null,
+        note:
+          resolution.via === "portal_match"
+            ? "Coincide con el anuncio del portal por título, zona y precio. Confirma con el cliente mencionando título y precio de NUESTRA ficha antes de canalizar."
+            : undefined,
+      };
     }
     case "check_assignment": {
       const fresh = await prisma.conversation.findUniqueOrThrow({

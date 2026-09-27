@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 import { checkFetchableUrl, isPrivateAddress } from "@/lib/url-safety";
 
 const MAX_REDIRECTS = 3;
-const MAX_BYTES = 512 * 1024;
+const MAX_BYTES = 1536 * 1024;
 const TIMEOUT_MS = 5000;
 
 export type LinkFetchResult =

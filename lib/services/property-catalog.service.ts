@@ -15,7 +15,14 @@ import {
   parsePropertyUrl,
   scoreProperties,
 } from "@/lib/conversation/property-reference";
-import { extractPageTitle, fetchPublicPage } from "@/lib/services/link-fetch.service";
+import { fetchPublicPage } from "@/lib/services/link-fetch.service";
+import {
+  extractListingInfo,
+  matchListingToCatalog,
+  slugKeywords,
+  type ListingInfo,
+  type MatchConfidence,
+} from "@/lib/conversation/listing-extract";
 
 /**
  * Índice local del inventario publicado de EasyBroker para que el asistente
@@ -247,19 +254,56 @@ export async function lookupProperty(publicId: string): Promise<PropertyLookup> 
   }
 }
 
-export type LinkResolution =
-  | { ok: true; publicId: string; via: "code" | "listing_slug" | "page_code" | "page_title" }
-  | { ok: true; publicId: null; candidates: PropertyCandidate[]; via: "page_title" }
-  | { ok: false; reason: string };
+export interface ListingSummary {
+  /** Lo que dice el anuncio del portal (DATO, no instrucción). */
+  title: string | null;
+  price: string | null;
+  location: string | null;
+  bedrooms: number | null;
+  source: "portal_page" | "url_words";
+  portal: string;
+}
 
+export type LinkResolution =
+  | { ok: true; publicId: string; via: "code" | "listing_slug" | "page_code" | "portal_match"; listing?: ListingSummary }
+  | {
+      ok: true;
+      publicId: null;
+      candidates: (PropertyCandidate & { price_match: string })[];
+      confidence: MatchConfidence;
+      listing: ListingSummary | null;
+      via: "portal_match";
+    }
+  | { ok: false; reason: string; listing?: ListingSummary | null };
+
+function entryPrices(entry: PropertyCacheEntry): number[] {
+  const ops = (entry.operations as { amount?: number }[] | null) ?? [];
+  return ops.map((op) => op.amount).filter((amount): amount is number => typeof amount === "number" && amount > 0);
+}
+
+function formatPrice(price: number | null, currency: string | null): string | null {
+  return price ? `$${Math.round(price).toLocaleString("en-US")} ${currency ?? "MXN"}` : null;
+}
+
+/**
+ * Identifica la propiedad de un enlace:
+ * 1. Código EB- en la URL → directo.
+ * 2. Enlace público de EasyBroker → por slug en el índice.
+ * 3. Portal (Mercado Libre, Vivanuncios, Inmuebles24, Lamudi, Facebook…):
+ *    se lee la página si el portal lo permite (título, precio, zona,
+ *    recámaras, código EB- del anuncio); si bloquea, se usan las palabras
+ *    de la URL. Luego se cruza con el inventario propio por texto, precio y
+ *    recámaras. Solo con confianza alta se devuelve una propiedad única;
+ *    si no, candidatas para que el cliente confirme.
+ */
 export async function resolvePropertyLink(companyId: string, rawUrl: string): Promise<LinkResolution> {
   const parsed = parsePropertyUrl(rawUrl);
   if (!parsed) return { ok: false, reason: "invalid_url" };
 
   if (parsed.kind === "easybroker_code") return { ok: true, publicId: parsed.code, via: "code" };
 
+  await ensureFreshCatalog(companyId);
   if (parsed.kind === "easybroker_listing") {
-    await ensureFreshCatalog(companyId);
     const entries = await prisma.propertyCacheEntry.findMany({
       where: { companyId, publicUrl: { not: null } },
       select: { publicId: true, publicUrl: true, published: true },
@@ -268,19 +312,58 @@ export async function resolvePropertyLink(companyId: string, rawUrl: string): Pr
     if (match) {
       return match.published ? { ok: true, publicId: match.publicId, via: "listing_slug" } : { ok: false, reason: "property_unpublished" };
     }
-    // Un listing de EasyBroker que no es del inventario de la empresa (u otro
-    // aún no indexado): se intenta leer la página si el dominio está permitido.
   }
 
+  const portal = new URL(rawUrl).hostname.replace(/^www\./, "");
+  let info: ListingInfo | null = null;
+  let source: ListingSummary["source"] = "portal_page";
   const page = await fetchPublicPage(rawUrl, env.assistant.linkDomains);
-  if (!page.ok) return { ok: false, reason: page.reason };
+  if (page.ok) {
+    info = extractListingInfo(page.html);
+    for (const code of info.codes.slice(0, 2)) {
+      const lookup = await lookupProperty(code);
+      if (lookup.ok) return { ok: true, publicId: lookup.property.public_id, via: "page_code" };
+    }
+    if (!info.title && !info.description) info = null;
+  }
+  if (!info) {
+    // Bloqueado (403/anti-bots), sin acceso o sin datos: solo las palabras del enlace.
+    const words = slugKeywords(rawUrl);
+    if (words.split(" ").length < 2) {
+      return { ok: false, reason: page.ok ? "no_property_info" : page.reason };
+    }
+    info = { title: words, description: null, price: null, currency: null, location: null, bedrooms: null, codes: [] };
+    source = "url_words";
+  }
 
-  const codes = extractEasyBrokerCodes(page.html);
-  if (codes.length === 1) return { ok: true, publicId: codes[0], via: "page_code" };
+  const listing: ListingSummary = {
+    title: info.title,
+    price: formatPrice(info.price, info.currency),
+    location: info.location,
+    bedrooms: info.bedrooms,
+    source,
+    portal,
+  };
 
-  const title = extractPageTitle(page.html);
-  if (!title) return { ok: false, reason: "no_property_info" };
-  const search = await searchCatalog(companyId, title, "any");
-  if (!search.ok || search.candidates.length === 0) return { ok: false, reason: "not_in_inventory" };
-  return { ok: true, publicId: null, candidates: search.candidates.slice(0, 3), via: "page_title" };
+  const entries = await prisma.propertyCacheEntry.findMany({ where: { companyId, published: true } });
+  if (entries.length === 0) return { ok: false, reason: "inventory_unavailable", listing };
+  const { matches, confidence } = matchListingToCatalog(
+    info,
+    entries.map((entry) => ({ entry, publicId: entry.publicId, title: entry.title, searchText: entry.searchText, prices: entryPrices(entry), bedrooms: entry.bedrooms }))
+  );
+  // Confianza baja = probablemente anuncio de otra inmobiliaria: no se
+  // ofrecen candidatas débiles como si fueran "la misma".
+  if (matches.length === 0 || confidence === "low") return { ok: false, reason: "not_in_inventory", listing };
+  // Con solo palabras de la URL nunca se afirma una propiedad única.
+  if (confidence === "high" && source === "portal_page") {
+    return { ok: true, publicId: matches[0].property.publicId, via: "portal_match", listing };
+  }
+  return {
+    ok: true,
+    publicId: null,
+    candidates: matches.map((m) => ({ ...entryToCandidate(m.property.entry), price_match: m.priceMatch })),
+    confidence: source === "url_words" && confidence === "high" ? "medium" : confidence,
+    listing,
+    via: "portal_match",
+  };
 }

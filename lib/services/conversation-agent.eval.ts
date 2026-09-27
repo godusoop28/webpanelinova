@@ -79,6 +79,20 @@ vi.mock("@/lib/services/property-catalog.service", async () => {
         const match = state.catalog.find((p) => ref.listingSlugFromPublicUrl(p.url) === parsed.slug);
         return match ? { ok: true, publicId: match.publicId, via: "listing_slug" } : { ok: false, reason: "not_in_inventory" };
       }
+      if (url.includes("chapalita")) {
+        return { ok: false, reason: "not_in_inventory", listing: { title: "Casa En Venta En Colonia Chapalita Oriente, Zapopan", price: "$10,500,000 MXN", location: null, bedrooms: null, source: "portal_page", portal: "casa.mercadolibre.com.mx" } };
+      }
+      if (url.includes("coto-almendro")) {
+        const pick = state.catalog.filter((p) => ["EB-WF7156", "EB-WE0782"].includes(p.publicId));
+        return {
+          ok: true, publicId: null, confidence: "medium", via: "portal_match",
+          listing: { title: "casa venta coto almendro valle imperial zapopan", price: null, location: null, bedrooms: null, source: "url_words", portal: "inmuebles24.com" },
+          candidates: pick.map((p) => ({ public_id: p.publicId, title: p.title, type: p.type ?? null, location: p.location ?? null, price: p.price ?? null, url: p.url ?? null, price_match: "unknown" })),
+        };
+      }
+      if (url.includes("residencia-de-lujo-en-las-canadas")) {
+        return { ok: true, publicId: "EB-VY0780", via: "portal_match", listing: { title: "Residencia De Lujo En Las Cañadas", price: "$13,900,000 MXN", location: null, bedrooms: null, source: "portal_page", portal: "casa.mercadolibre.com.mx" } };
+      }
       return { ok: false, reason: "domain_not_supported" };
     },
   };
@@ -244,6 +258,23 @@ describe("evaluación del asistente (OpenAI real)", { timeout: 240_000 }, () => 
     const r = await converse("Enlace no soportado", ["https://www.inmuebles24.com/propiedades/casa-en-venta-123456.html"]);
     expect(r.invented).toEqual([]);
     expect(r.calls.some((c) => c.tool === "commercial")).toBe(false);
+  });
+
+  it("portal: anuncio propio en Mercado Libre (coincidencia alta)", async () => {
+    const r = await converse("ML propio", ["https://casa.mercadolibre.com.mx/MLM-3442994685-residencia-de-lujo-en-las-canadas-vista-espectacular-al-campo-de-golf-_JM"]);
+    expect(r.traces[0].join(" ")).toContain("resolve_link");
+    expect(r.invented).toEqual([]);
+  });
+
+  it("portal: Inmuebles24 bloqueado, candidatas por el enlace (no afirma)", async () => {
+    const r = await converse("Inmuebles24 candidatas", ["https://www.inmuebles24.com/propiedades/clasificado/veclcain-casa-venta-coto-almendro-valle-imperial-zapopan-123.html"]);
+    expect(r.calls.some((c) => c.tool === "commercial")).toBe(false);
+  });
+
+  it("portal: anuncio de otra inmobiliaria", async () => {
+    const r = await converse("ML otra inmobiliaria", ["me interesa esta https://casa.mercadolibre.com.mx/MLM-2929767511-casa-en-venta-en-colonia-chapalita-oriente-zapopan-jalisco-_JM"]);
+    expect(r.replies[0]).not.toMatch(/no existe/i);
+    expect(r.invented).toEqual([]);
   });
 
   it("13. ninguna propiedad encontrada", async () => {

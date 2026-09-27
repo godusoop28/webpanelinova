@@ -15,6 +15,25 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * Portales cuyos anuncios el asistente puede intentar leer. Si el portal
+ * bloquea (Inmuebles24, Lamudi → 403) o exige sesión (Facebook), se usan
+ * solo las palabras del enlace; nunca se intenta saltar el bloqueo.
+ */
+const DEFAULT_LINK_DOMAINS = [
+  "easybroker.com",
+  "mercadolibre.com.mx",
+  "vivanuncios.com.mx",
+  "inmuebles24.com",
+  "lamudi.com.mx",
+  "propiedades.com",
+  "casasyterrenos.com",
+  "century21mexico.com",
+  "facebook.com",
+  "fb.me",
+  "meli.la",
+].join(",");
+
 export const env = {
   auth: {
     get secret() {
@@ -64,7 +83,7 @@ export const env = {
     },
     /** Dominios cuyos enlaces se pueden leer para identificar propiedades (coma). */
     get linkDomains() {
-      return (optionalEnv("ASSISTANT_LINK_DOMAINS") ?? "easybroker.com")
+      return (optionalEnv("ASSISTANT_LINK_DOMAINS") ?? DEFAULT_LINK_DOMAINS)
         .split(",")
         .map((domain) => domain.trim().toLowerCase())
         .filter(Boolean);

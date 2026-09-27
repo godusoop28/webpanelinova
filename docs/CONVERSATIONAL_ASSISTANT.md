@@ -91,6 +91,41 @@ aditiva): `AssistantSettings`, `Conversation`, `ConversationMessage`,
 - Memoria: últimos 40 mensajes + resumen que el modelo actualiza cada turno.
   Solo mensajes capturados por este sistema; no hay historial previo de WhatsApp.
 
+## Enlaces de portales
+
+`resolve_link` → `resolvePropertyLink` (`lib/services/property-catalog.service.ts`)
++ `lib/conversation/listing-extract.ts`:
+
+1. Código EB- en la URL → directo.
+2. Enlace público de EasyBroker → por slug en el índice.
+3. Portal: descarga acotada y segura (solo HTTPS, dominios permitidos,
+   destino no privado, ≤3 redirecciones, 1.5 MB, 5 s). Lee og:title,
+   og:description, JSON-LD (nombre, precio, recámaras, dirección) y códigos
+   EB- del contenido principal. Un código EB- se verifica con EasyBroker
+   (los de otras inmobiliarias dan 404: nunca se toman como propios).
+4. Si el portal bloquea o exige sesión, solo se usan las palabras del
+   enlace. **No se intenta saltar bloqueos.**
+5. Cruce con el inventario: pesos por rareza de la palabra (IDF), frases de
+   dos palabras ("valle real" ≠ "valle imperial"), palabras genéricas del
+   sector ignoradas, penalización por tipo distinto (casa ≠ departamento);
+   el precio solo confirma. Confianza alta → propiedad única; media →
+   candidatas para que el cliente elija; baja → "no está en nuestro
+   inventario" (probablemente de otra inmobiliaria).
+
+Verificado en vivo el 27-sep-2026 (`lib/conversation/listing-extract.eval.ts`):
+
+| Portal | Lectura | Resultado |
+|---|---|---|
+| Mercado Libre | ✅ | anuncios propios traen el código EB- → identificación exacta; otros → "no está en inventario" |
+| Vivanuncios | ⚠️ a veces 403 | con página: título/zona/código; bloqueado: palabras del enlace |
+| Inmuebles24 | ❌ 403 (anti-bots) | palabras del enlace → candidatas |
+| Lamudi | ❌ 403 | enlaces sin palabras → pide código/colonia |
+| Facebook | requiere sesión | pide código/colonia o descripción |
+| Casas y Terrenos, Propiedades.com, century21mexico.com | permitido | según lo que exponga la página |
+
+Dominios configurables con `ASSISTANT_LINK_DOMAINS` (por defecto los de la
+tabla + `easybroker.com`, `fb.me`, `meli.la`).
+
 ## Fallos
 
 | Falla | Comportamiento |
@@ -124,7 +159,7 @@ Variables de entorno nuevas (todas opcionales):
 - `OPENAI_ASSISTANT_MODEL`: modelo del asistente (default `OPENAI_PROPERTY_SEARCH_MODEL`).
   Verificado con `gpt-5.4-mini` vía Responses API (en Chat Completions ese
   modelo no admite herramientas con razonamiento).
-- `ASSISTANT_LINK_DOMAINS`: dominios cuyos enlaces se pueden leer (default `easybroker.com`).
+- `ASSISTANT_LINK_DOMAINS`: dominios cuyos enlaces se pueden leer (default: EasyBroker, Mercado Libre, Vivanuncios, Inmuebles24, Lamudi, Propiedades.com, Casas y Terrenos, century21mexico.com, Facebook y acortadores).
 
 ## ManyChat
 
