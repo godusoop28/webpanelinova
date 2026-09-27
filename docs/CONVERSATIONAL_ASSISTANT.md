@@ -155,10 +155,19 @@ otra vez al nodo "Enviar mensaje ¡Bienvenido a C21 Inova!" y publicar.
 Sin tocar ManyChat basta con modo OFF: el backend responde `handled=false`
 y el cliente recibe la bienvenida + innova igual que antes.
 
-Estado al 26-sep-2026: backend en TEST_ONLY con el contacto de prueba
-1016264146. Palabras clave aún activas (hola/buen/noche…, "EB-",
-"ninguna…") siguen yendo al flujo anterior también para el contacto de
-prueba hasta el corte a ON.
+Estado al 26-sep-2026 (corte a producción): modo **ON** para todos,
+AUTOMATION_MODE=live. Disparadores de palabras clave DESACTIVADOS (no
+borrados): "innova" (hola, Hola, Noche, Quiubo, Hey, Buen, solicito),
+"Campaña propiedad" (EB-) y "Ninguna de las anteriores". Para volver al
+comportamiento anterior completo: modo OFF + reactivar esos tres
+disparadores + reconectar la respuesta predeterminada al mensaje de bienvenida.
+
+Nota: la conversación del contacto de prueba 1016264146 quedó marcada
+como prueba (isTest): recibe respuestas reales pero no crea leads.
+
+Error conocido del flujo anterior (no corregido, queda de respaldo): la
+ruta "Explorar" de "innova" manda el campo Datos_Propiedad sin limpiarlo,
+así que puede enviar al asesor una propiedad de una conversación vieja.
 
 ### Activación gradual
 
