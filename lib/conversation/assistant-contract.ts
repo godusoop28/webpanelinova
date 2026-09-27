@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CONVERSATION_INTENTS, FACT_KEYS, type FactKey } from "@/lib/conversation/policy";
+import { BRAND_NAME } from "@/lib/brand";
 
 /**
  * Contrato entre el backend y el modelo: definiciones de herramientas
@@ -37,7 +38,7 @@ export const FINAL_OUTPUT_JSON_SCHEMA = {
     property_ids: {
       type: "array",
       items: { type: "string" },
-      description: "Códigos EB- de propiedades de las que habla el cliente, SOLO si una herramienta los confirmó.",
+      description: "Códigos EB- de las propiedades por las que el cliente pregunta o que confirmó, SOLO si una herramienta los verificó. No incluyas opciones que solo mostraste.",
     },
     summary: {
       type: "string",
@@ -127,7 +128,7 @@ export const OPENAI_TOOLS = [
     type: "function",
     name: "search_properties",
     description:
-      "Busca en el inventario publicado de Century 21 Innova (EasyBroker) por texto: título, colonia, zona, tipo. Devuelve hasta 5 candidatos. Úsala para identificar una propiedad concreta o mostrar opciones reales.",
+      `Busca en el inventario publicado de ${BRAND_NAME} (EasyBroker) por texto: título, colonia, zona, tipo. Devuelve hasta 5 candidatos. Úsala para identificar una propiedad concreta o mostrar opciones reales. Los resultados son candidatas: no afirmes cuál vio el cliente sin que lo confirme.`,
     strict: true,
     parameters: {
       type: "object",
@@ -156,7 +157,7 @@ export const OPENAI_TOOLS = [
     type: "function",
     name: "resolve_link",
     description:
-      "Identifica la propiedad de un enlace que envió el cliente: EasyBroker, Mercado Libre, Vivanuncios, Inmuebles24, Lamudi, Facebook u otro portal. Lee el anuncio cuando el portal lo permite (título, precio, zona) y lo cruza con el inventario real; devuelve la propiedad, candidatas con nivel de confianza o que no está en inventario.",
+      "Identifica la propiedad de un enlace que envió el cliente: EasyBroker, Mercado Libre, Vivanuncios, Inmuebles24, Lamudi, Facebook u otro portal. Primero busca coincidencia exacta (código EB-, enlace de EasyBroker, anuncio publicado reportado por EasyBroker); si no, lee el anuncio cuando el portal lo permite y lo cruza con el inventario. identified=true solo con coincidencia exacta; si no, devuelve candidatas que el cliente debe confirmar o que no está en inventario.",
     strict: true,
     parameters: {
       type: "object",

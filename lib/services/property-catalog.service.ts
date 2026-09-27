@@ -5,14 +5,18 @@ import { env } from "@/lib/env";
 import {
   EasyBrokerApiError,
   getProperty,
+  listPropertyIntegrationsPage,
   listPublishedPropertiesPage,
   type EasyBrokerProperty,
 } from "@/lib/services/easybroker.service";
 import {
+  canonicalizeUrl,
   extractEasyBrokerCodes,
   listingSlugFromPublicUrl,
   normalizeSearchText,
   parsePropertyUrl,
+  portalListingKeyFromUrl,
+  portalOfHost,
   scoreProperties,
 } from "@/lib/conversation/property-reference";
 import { fetchPublicPage } from "@/lib/services/link-fetch.service";
@@ -108,6 +112,7 @@ export async function syncPropertyCatalog(companyId: string): Promise<CatalogSyn
       bedrooms: merged.bedrooms ?? null,
       bathrooms: merged.bathrooms ?? null,
       publicUrl: merged.public_url ?? byId.get(property.public_id)?.publicUrl ?? null,
+      internalId: detail ? (typeof detail.internal_id === "string" && detail.internal_id.trim() ? detail.internal_id.trim().slice(0, 60) : null) : byId.get(property.public_id)?.internalId ?? null,
       searchText: buildSearchText(merged),
       // Si el detalle falló, no se guarda la marca de tiempo: se reintenta en la próxima sincronización.
       ebUpdatedAt: detail || !needsDetail.includes(property) ? property.updated_at ?? null : null,
@@ -140,10 +145,16 @@ export async function ensureFreshCatalog(companyId: string, maxAgeMs = CACHE_MAX
   if (newest && Date.now() - newest.syncedAt.getTime() < maxAgeMs) return { synced: false };
   try {
     await syncPropertyCatalog(companyId);
-    return { synced: true };
   } catch (error) {
     return { synced: false, error: error instanceof Error ? error.message : "Error desconocido" };
   }
+  try {
+    await syncPortalListings(companyId);
+  } catch (error) {
+    // Sin anuncios de portales solo se pierde la vía rápida de identificación; el resto sigue.
+    console.error("[CATALOG] anuncios de portales no sincronizados", error instanceof Error ? error.message : error);
+  }
+  return { synced: true };
 }
 
 export interface PropertyCandidate {
@@ -264,8 +275,18 @@ export interface ListingSummary {
   portal: string;
 }
 
+/**
+ * Cómo quedó identificada la propiedad de un enlace (de mayor a menor certeza):
+ * - code: código EB- en la URL.
+ * - listing_slug: enlace público de EasyBroker.
+ * - portal_listing: el anuncio del portal es uno de los que EasyBroker reporta como publicados para esa propiedad.
+ * - page_code: la página del anuncio trae un código EB- verificado.
+ * - internal_code: la página trae la clave interna exacta de una propiedad propia.
+ */
+export type LinkVia = "code" | "listing_slug" | "portal_listing" | "page_code" | "internal_code";
+
 export type LinkResolution =
-  | { ok: true; publicId: string; via: "code" | "listing_slug" | "page_code" | "portal_match"; listing?: ListingSummary }
+  | { ok: true; publicId: string; via: LinkVia; portal: string | null; listing?: ListingSummary }
   | {
       ok: true;
       publicId: null;
@@ -273,8 +294,9 @@ export type LinkResolution =
       confidence: MatchConfidence;
       listing: ListingSummary | null;
       via: "portal_match";
+      portal: string | null;
     }
-  | { ok: false; reason: string; listing?: ListingSummary | null };
+  | { ok: false; reason: string; listing?: ListingSummary | null; portal: string | null };
 
 function entryPrices(entry: PropertyCacheEntry): number[] {
   const ops = (entry.operations as { amount?: number }[] | null) ?? [];
@@ -285,52 +307,102 @@ function formatPrice(price: number | null, currency: string | null): string | nu
   return price ? `$${Math.round(price).toLocaleString("en-US")} ${currency ?? "MXN"}` : null;
 }
 
-/**
- * Identifica la propiedad de un enlace:
- * 1. Código EB- en la URL → directo.
- * 2. Enlace público de EasyBroker → por slug en el índice.
- * 3. Portal (Mercado Libre, Vivanuncios, Inmuebles24, Lamudi, Facebook…):
- *    se lee la página si el portal lo permite (título, precio, zona,
- *    recámaras, código EB- del anuncio); si bloquea, se usan las palabras
- *    de la URL. Luego se cruza con el inventario propio por texto, precio y
- *    recámaras. Solo con confianza alta se devuelve una propiedad única;
- *    si no, candidatas para que el cliente confirme.
- */
-export async function resolvePropertyLink(companyId: string, rawUrl: string): Promise<LinkResolution> {
-  const parsed = parsePropertyUrl(rawUrl);
-  if (!parsed) return { ok: false, reason: "invalid_url" };
-
-  if (parsed.kind === "easybroker_code") return { ok: true, publicId: parsed.code, via: "code" };
-
-  await ensureFreshCatalog(companyId);
+/** Identificación exacta sin descargar nada: código en la URL, enlace de EasyBroker o anuncio conocido del portal. */
+async function resolveWithoutFetch(
+  companyId: string,
+  canonicalUrl: string
+): Promise<{ publicId: string; via: LinkVia } | { unpublished: true } | null> {
+  const parsed = parsePropertyUrl(canonicalUrl);
+  if (!parsed) return null;
+  if (parsed.kind === "easybroker_code") return { publicId: parsed.code, via: "code" };
   if (parsed.kind === "easybroker_listing") {
     const entries = await prisma.propertyCacheEntry.findMany({
       where: { companyId, publicUrl: { not: null } },
       select: { publicId: true, publicUrl: true, published: true },
     });
     const match = entries.find((entry) => listingSlugFromPublicUrl(entry.publicUrl) === parsed.slug);
-    if (match) {
-      return match.published ? { ok: true, publicId: match.publicId, via: "listing_slug" } : { ok: false, reason: "property_unpublished" };
-    }
+    if (match) return match.published ? { publicId: match.publicId, via: "listing_slug" } : { unpublished: true };
+    return null;
   }
+  const key = portalListingKeyFromUrl(canonicalUrl);
+  if (key) {
+    const listing = await prisma.portalListing.findUnique({
+      where: { companyId_portal_externalKey: { companyId, portal: key.portal, externalKey: key.externalKey } },
+      select: { publicId: true },
+    });
+    if (listing) return { publicId: listing.publicId, via: "portal_listing" };
+  }
+  return null;
+}
 
-  const portal = new URL(rawUrl).hostname.replace(/^www\./, "");
+/** Claves internas de propiedades propias que aparecen como palabra completa en el anuncio. */
+async function findInternalCodeMatches(companyId: string, text: string): Promise<string[]> {
+  const entries = await prisma.propertyCacheEntry.findMany({
+    where: { companyId, internalId: { not: null } },
+    select: { publicId: true, internalId: true },
+  });
+  const haystack = ` ${normalizeSearchText(text)} `;
+  return entries
+    .filter((entry) => {
+      const code = normalizeSearchText(entry.internalId ?? "");
+      // Claves cortas o solo numéricas cortas coinciden por casualidad: no se usan.
+      return code.length >= 4 && /\d/.test(code) && haystack.includes(` ${code} `);
+    })
+    .map((entry) => entry.publicId);
+}
+
+/**
+ * Identifica la propiedad de un enlace, en este orden:
+ * 1. Código EB- en la URL (tras quitar rastreo y desenvolver redirecciones conocidas).
+ * 2. Enlace público de EasyBroker → por slug en el índice.
+ * 3. Anuncio conocido: el ID/URL del portal coincide con un anuncio que
+ *    EasyBroker reporta para una propiedad propia (API oficial, sin leer la página).
+ * 4. Enlaces cortos (meli.la, fb.me…): se sigue la redirección permitida y se repiten 1–3.
+ * 5. Lectura pública de la página si el portal lo permite: código EB- o
+ *    clave interna exacta del anuncio.
+ * 6. Si no hay coincidencia exacta: candidatas por título/zona/precio, que
+ *    SIEMPRE requieren confirmación del cliente (nunca se afirma una
+ *    propiedad solo porque el título se parece).
+ */
+export async function resolvePropertyLink(companyId: string, rawUrl: string): Promise<LinkResolution> {
+  const canonical = canonicalizeUrl(rawUrl);
+  if (!canonical) return { ok: false, reason: "invalid_url", portal: null };
+  const portal = portalOfHost(new URL(canonical).hostname);
+
+  const parsedCode = parsePropertyUrl(canonical);
+  if (parsedCode?.kind === "easybroker_code") return { ok: true, publicId: parsedCode.code, via: "code", portal };
+
+  await ensureFreshCatalog(companyId);
+  const direct = await resolveWithoutFetch(companyId, canonical);
+  if (direct && "publicId" in direct) return { ok: true, ...direct, portal };
+  if (direct) return { ok: false, reason: "property_unpublished", portal };
+
   let info: ListingInfo | null = null;
   let source: ListingSummary["source"] = "portal_page";
-  const page = await fetchPublicPage(rawUrl, env.assistant.linkDomains);
+  const page = await fetchPublicPage(canonical, env.assistant.linkDomains);
+  let finalPortal = portal;
   if (page.ok) {
+    const finalCanonical = canonicalizeUrl(page.finalUrl);
+    if (finalCanonical && finalCanonical !== canonical) {
+      finalPortal = portalOfHost(new URL(finalCanonical).hostname) ?? portal;
+      const viaRedirect = await resolveWithoutFetch(companyId, finalCanonical);
+      if (viaRedirect && "publicId" in viaRedirect) return { ok: true, ...viaRedirect, portal: finalPortal };
+      if (viaRedirect) return { ok: false, reason: "property_unpublished", portal: finalPortal };
+    }
     info = extractListingInfo(page.html);
     for (const code of info.codes.slice(0, 2)) {
       const lookup = await lookupProperty(code);
-      if (lookup.ok) return { ok: true, publicId: lookup.property.public_id, via: "page_code" };
+      if (lookup.ok) return { ok: true, publicId: lookup.property.public_id, via: "page_code", portal: finalPortal };
     }
+    const internal = await findInternalCodeMatches(companyId, `${info.title ?? ""} ${info.description ?? ""}`);
+    if (internal.length === 1) return { ok: true, publicId: internal[0], via: "internal_code", portal: finalPortal };
     if (!info.title && !info.description) info = null;
   }
   if (!info) {
     // Bloqueado (403/anti-bots), sin acceso o sin datos: solo las palabras del enlace.
-    const words = slugKeywords(rawUrl);
+    const words = slugKeywords(canonical);
     if (words.split(" ").length < 2) {
-      return { ok: false, reason: page.ok ? "no_property_info" : page.reason };
+      return { ok: false, reason: page.ok ? "no_property_info" : page.reason, portal: finalPortal };
     }
     info = { title: words, description: null, price: null, currency: null, location: null, bedrooms: null, codes: [] };
     source = "url_words";
@@ -342,28 +414,75 @@ export async function resolvePropertyLink(companyId: string, rawUrl: string): Pr
     location: info.location,
     bedrooms: info.bedrooms,
     source,
-    portal,
+    portal: new URL(canonical).hostname.replace(/^www\./, ""),
   };
 
   const entries = await prisma.propertyCacheEntry.findMany({ where: { companyId, published: true } });
-  if (entries.length === 0) return { ok: false, reason: "inventory_unavailable", listing };
+  if (entries.length === 0) return { ok: false, reason: "inventory_unavailable", listing, portal: finalPortal };
   const { matches, confidence } = matchListingToCatalog(
     info,
     entries.map((entry) => ({ entry, publicId: entry.publicId, title: entry.title, searchText: entry.searchText, prices: entryPrices(entry), bedrooms: entry.bedrooms }))
   );
   // Confianza baja = probablemente anuncio de otra inmobiliaria: no se
   // ofrecen candidatas débiles como si fueran "la misma".
-  if (matches.length === 0 || confidence === "low") return { ok: false, reason: "not_in_inventory", listing };
-  // Con solo palabras de la URL nunca se afirma una propiedad única.
-  if (confidence === "high" && source === "portal_page") {
-    return { ok: true, publicId: matches[0].property.publicId, via: "portal_match", listing };
-  }
+  if (matches.length === 0 || confidence === "low") return { ok: false, reason: "not_in_inventory", listing, portal: finalPortal };
   return {
     ok: true,
     publicId: null,
     candidates: matches.map((m) => ({ ...entryToCandidate(m.property.entry), price_match: m.priceMatch })),
+    // Con solo palabras de la URL nunca hay confianza alta.
     confidence: source === "url_words" && confidence === "high" ? "medium" : confidence,
     listing,
     via: "portal_match",
+    portal: finalPortal,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Anuncios en portales reportados por EasyBroker
+// ---------------------------------------------------------------------------
+
+/**
+ * Sincroniza los anuncios de portales de cada propiedad (GET
+ * /property_integrations). Solo se guardan anuncios con clave estable
+ * (ID remoto o URL con ID); los que EasyBroker reporta sin URL (p. ej.
+ * Lamudi) no permiten identificar un enlace y se omiten.
+ */
+export async function syncPortalListings(companyId: string): Promise<{ total: number; saved: number }> {
+  const first = await listPropertyIntegrationsPage(1, PAGE_SIZE);
+  const totalPages = Math.min(first.total != null ? Math.ceil(first.total / PAGE_SIZE) : first.hasNext ? MAX_PAGES : 1, MAX_PAGES);
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(0, totalPages - 1) }, (_, i) => listPropertyIntegrationsPage(i + 2, PAGE_SIZE))
+  );
+  const properties = [...first.content, ...rest.flatMap((page) => page.content)];
+  const now = new Date();
+  let saved = 0;
+  for (const property of properties) {
+    for (const integration of property.integrations) {
+      const symbol = integration.integration_partner?.symbol?.trim();
+      if (!symbol) continue;
+      const url = integration.listing_url?.trim() || null;
+      const canonical = url ? canonicalizeUrl(url) : null;
+      const key = canonical ? portalListingKeyFromUrl(canonical, integration.remote_listing_id) : null;
+      const externalKey = key?.externalKey ?? integration.remote_listing_id?.trim() ?? null;
+      if (!externalKey) continue;
+      // El símbolo del portal se toma de la URL cuando se reconoce (así coincide con el enlace del cliente).
+      const portal = key?.portal ?? symbol;
+      const data = {
+        publicId: property.public_id,
+        portalName: integration.integration_partner?.name?.slice(0, 80) ?? symbol,
+        listingUrl: canonical,
+        published: Boolean(integration.published),
+        status: integration.status ?? null,
+        syncedAt: now,
+      };
+      await prisma.portalListing.upsert({
+        where: { companyId_portal_externalKey: { companyId, portal, externalKey } },
+        create: { companyId, portal, externalKey, source: "easybroker_integration", ...data },
+        update: data,
+      });
+      saved += 1;
+    }
+  }
+  return { total: properties.length, saved };
 }

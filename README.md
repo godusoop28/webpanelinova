@@ -1,7 +1,7 @@
-# Panel Century 21 Innova
+# Panel Century 21 Inova
 
 Panel administrativo, backend y motor de asignación de leads para
-Century 21 Innova. Next.js (App Router) + Prisma + Neon PostgreSQL, con
+Century 21 Inova. Next.js (App Router) + Prisma + Neon PostgreSQL, con
 integración directa a EasyBroker, ManyChat y OpenAI.
 
 Ver **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** para la arquitectura

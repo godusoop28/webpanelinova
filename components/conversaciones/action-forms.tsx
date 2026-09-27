@@ -79,6 +79,7 @@ export function SettingsForm({
     maxClarifications: number;
     abandonHandoffMinutes: number;
     existingLeadWindowDays: number;
+    handoffReopenMinutes: number;
     testSubscriberIds: string[];
     managementSubscriberIds: string[];
   };
@@ -115,6 +116,13 @@ export function SettingsForm({
         <label className="space-y-1 text-xs font-medium text-ink-600">
           Reutilizar lead del mismo teléfono (días)
           <input name="existingLeadWindowDays" type="number" min={1} max={365} defaultValue={settings.existingLeadWindowDays} className={inputClass} />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-ink-600">
+          Reabrir conversación con la IA tras canalizar (min)
+          <input name="handoffReopenMinutes" type="number" min={0} max={1440} defaultValue={settings.handoffReopenMinutes} className={inputClass} />
+          <span className="block font-normal text-ink-400">
+            Se cuenta desde la canalización. Durante la espera el bot solo da un aviso; no quita pausas manuales. 0 = sin espera.
+          </span>
         </label>
         <label className="space-y-1 text-xs font-medium text-ink-600 sm:col-span-2">
           Contactos de prueba (subscriber ID de ManyChat, separados por coma)

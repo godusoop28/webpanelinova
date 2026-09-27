@@ -12,6 +12,13 @@ import {
   type Facts,
   type HandoffTrigger,
 } from "@/lib/conversation/policy";
+import {
+  buildAssignmentConfirmation,
+  computeReopenAt,
+  handoffInCurrentSession,
+  type AssignmentFacts,
+  type WaitReason,
+} from "@/lib/conversation/session";
 import { processIncomingLead, DuplicatePhoneLeadError, ADVISOR_LEAD_FIELD_IDS } from "@/lib/services/lead.service";
 import { getRotationCandidatesForSimulation } from "@/lib/services/assignment.service";
 import { findAdvisorByEasyBrokerEmail } from "@/lib/repositories/advisor.repository";
@@ -22,31 +29,49 @@ import { logAuditEvent } from "@/lib/services/audit.service";
 
 const ASSISTANT_ORIGIN = "WhatsApp IA";
 
+/**
+ * Resultado real de la canalización. `advisor_name` y `customer_message`
+ * los arma el backend a partir de lo que ocurrió (nunca los inventa la IA).
+ */
 export type CommercialHandoffResult =
   | {
       status: "assigned";
       simulated: boolean;
-      advisor_first_name: string | null;
+      advisor_name: string | null;
       /** Asignación local registrada (LeadAssignment). */
       assignment_recorded: boolean;
       /** Aviso al asesor enviado por ManyChat (false = pendiente/reintento). */
       advisor_notified: boolean;
       /** Contacto confirmado en EasyBroker (false = pendiente/reintento). */
       crm_synced: boolean;
+      customer_message: string;
     }
-  | { status: "already_assigned"; advisor_first_name: string | null; follow_up_recorded: boolean }
-  | { status: "existing_lead"; advisor_first_name: string | null; follow_up_recorded: boolean }
-  | { status: "no_advisor_available"; pending_recorded: boolean }
+  | { status: "already_assigned"; advisor_name: string | null; follow_up_recorded: boolean; customer_message: string | null }
+  | { status: "existing_lead"; advisor_name: string | null; follow_up_recorded: boolean; customer_message: string }
+  | { status: "no_advisor_available"; pending_recorded: boolean; customer_message: string }
   | { status: "rejected"; reason: string }
   | { status: "error"; retryable: boolean };
 
-function firstName(name: string | null | undefined): string | null {
-  return name?.trim().split(/\s+/)[0] ?? null;
+function advisorDisplayName(name: string | null | undefined): string | null {
+  const value = name?.replace(/\s+/g, " ").trim();
+  return value || null;
 }
 
 export function conversationPanelUrl(conversationId: string): string | null {
   const base = env.assistant.panelUrl;
   return base ? `${base}/conversaciones/${conversationId}` : null;
+}
+
+/**
+ * Campos que abren la espera automática tras una canalización completada:
+ * contada desde ahora (la canalización), nunca desde mensajes posteriores.
+ */
+export function waitFields(settings: Pick<AssistantSettings, "handoffReopenMinutes">, reason: WaitReason, now = new Date()) {
+  return {
+    reopenAt: computeReopenAt(now, settings.handoffReopenMinutes),
+    reopenReason: reason,
+    waitNoticeAt: null,
+  };
 }
 
 /** Una sola escalación abierta por tipo y conversación: evita spam de pendientes. */
@@ -71,6 +96,36 @@ export async function recordEscalation(
     select: { id: true },
   });
   return { id: created.id, created: true };
+}
+
+/**
+ * Estado real de la canalización para decírselo al cliente: nombre del
+ * asesor asignado (de la base, no de la IA) y si el aviso se envió.
+ */
+export async function loadAssignmentFacts(
+  conversation: Pick<Conversation, "leadId" | "handoffState" | "handoffReason" | "isTest">
+): Promise<AssignmentFacts | null> {
+  if (conversation.handoffState === "NO_ADVISOR") return { status: "no_advisor", advisorName: null, advisorNotified: false };
+  if (conversation.handoffState !== "ASSIGNED" && conversation.handoffState !== "EXISTING_LEAD") return null;
+  if (!conversation.leadId) {
+    // Conversación de prueba: no hay lead; se usa el asesor que tocaría (simulación).
+    const simulated = conversation.isTest ? /tocaría a (.+?) por /.exec(conversation.handoffReason ?? "")?.[1] ?? null : null;
+    return simulated ? { status: "assigned", advisorName: simulated, advisorNotified: false } : null;
+  }
+  const lead = await prisma.lead.findUnique({
+    where: { id: conversation.leadId },
+    select: {
+      assignedAdvisor: { select: { name: true } },
+      assignments: { orderBy: { assignedAt: "desc" }, take: 1, select: { manyChatNotified: true } },
+    },
+  });
+  const advisorName = advisorDisplayName(lead?.assignedAdvisor?.name);
+  if (!advisorName) return { status: "no_advisor", advisorName: null, advisorNotified: false };
+  return {
+    status: conversation.handoffState === "EXISTING_LEAD" ? "existing" : "assigned",
+    advisorName,
+    advisorNotified: Boolean(lead?.assignments[0]?.manyChatNotified),
+  };
 }
 
 function describeBudget(facts: Facts): string | null {
@@ -110,12 +165,17 @@ async function dryRunAssignment(companyId: string, interesCliente: string, agent
   return picked ? { advisorName: picked.name, method: "WEIGHTED_ROTATION" as const } : null;
 }
 
+/** Idempotencia por sesión: reintentos del mismo turno no crean otro lead; una sesión nueva meses después sí puede. */
+function handoffRequestId(conversation: Pick<Conversation, "id" | "sessionStartSeq">): string {
+  return conversation.sessionStartSeq > 1 ? `conv:${conversation.id}:s${conversation.sessionStartSeq}:handoff` : `conv:${conversation.id}:handoff`;
+}
+
 /**
  * Canalización comercial. La IA solo la SOLICITA: aquí se validan
  * intención, propiedad, asignación previa e idempotencia, y se reutiliza
  * processIncomingLead (asesor propio / comodín / ruleta ponderada /
  * restricciones / auditoría / EasyBroker / reintentos / aviso ManyChat)
- * sin tocar sus reglas.
+ * sin tocar sus reglas. Al completarse abre la espera automática.
  */
 export async function requestCommercialHandoff(input: {
   conversation: Conversation;
@@ -129,21 +189,21 @@ export async function requestCommercialHandoff(input: {
   trigger: HandoffTrigger;
 }): Promise<CommercialHandoffResult> {
   const { conversation, settings } = input;
+  const now = new Date();
 
-  // 1. Ya canalizado en esta conversación: no se reasigna en silencio.
-  if (conversation.handoffState === "ASSIGNED" || conversation.handoffState === "EXISTING_LEAD") {
-    const lead = conversation.leadId
-      ? await prisma.lead.findUnique({ where: { id: conversation.leadId }, include: { assignedAdvisor: { select: { name: true } } } })
-      : null;
+  // 1. Ya canalizado en ESTA sesión: no se reasigna en silencio.
+  if ((conversation.handoffState === "ASSIGNED" || conversation.handoffState === "EXISTING_LEAD") && handoffInCurrentSession(conversation)) {
+    const facts = await loadAssignmentFacts(conversation);
     const followUp = await recordEscalation(
       conversation,
       "FOLLOW_UP",
-      `El cliente ya canalizado vuelve a solicitar atención: ${input.reason}`
+      `El cliente ya canalizado vuelve a solicitar atención: ${input.reason}${input.propertyPublicId ? ` (propiedad ${input.propertyPublicId})` : ""}`
     );
     return {
       status: "already_assigned",
-      advisor_first_name: firstName(lead?.assignedAdvisor?.name),
+      advisor_name: facts?.advisorName ?? null,
       follow_up_recorded: Boolean(followUp.id),
+      customer_message: facts ? buildAssignmentConfirmation({ ...facts, status: "existing" }) : null,
     };
   }
 
@@ -181,6 +241,7 @@ export async function requestCommercialHandoff(input: {
     summary: input.summary,
     conversationUrl: conversationPanelUrl(conversation.id),
   };
+  const wait = waitFields(settings, "commercial", now);
 
   // 3. Conversación de prueba: se calcula a quién tocaría, sin crear lead,
   // sin mover conteos de la ruleta y sin avisar a nadie.
@@ -190,20 +251,26 @@ export async function requestCommercialHandoff(input: {
       where: { id: conversation.id },
       data: {
         handoffState: dryRun ? "ASSIGNED" : "NO_ADVISOR",
-        handoffAt: new Date(),
+        handoffAt: now,
         handoffReason: `SIMULACIÓN (${decision.interesCliente}${propertyId ? ` ${propertyId}` : ""}): ${
           dryRun ? `tocaría a ${dryRun.advisorName} por ${dryRun.method}` : "sin asesores disponibles"
         }. ${input.reason}`.slice(0, 1000),
+        ...wait,
+        assignmentNoticeAt: null,
       },
     });
-    if (!dryRun) return { status: "no_advisor_available", pending_recorded: false };
+    if (!dryRun) {
+      return { status: "no_advisor_available", pending_recorded: false, customer_message: buildAssignmentConfirmation({ status: "no_advisor", advisorName: null, advisorNotified: false }) };
+    }
+    const name = advisorDisplayName(dryRun.advisorName);
     return {
       status: "assigned",
       simulated: true,
-      advisor_first_name: firstName(dryRun.advisorName),
+      advisor_name: name,
       assignment_recorded: false,
       advisor_notified: false,
       crm_synced: false,
+      customer_message: buildAssignmentConfirmation({ status: "assigned", advisorName: name, advisorNotified: false }),
     };
   }
 
@@ -213,18 +280,19 @@ export async function requestCommercialHandoff(input: {
     return { status: "error", retryable: false };
   }
 
-  // 4. El teléfono ya tiene un lead reciente (p. ej. del flujo anterior):
-  // se vincula y se registra el seguimiento, sin reasignar.
+  // 4. El teléfono ya tiene un lead reciente (p. ej. del flujo anterior o de
+  // una sesión anterior): se vincula y se registra la solicitud como
+  // seguimiento para su mismo asesor, sin reasignar.
   const recent = await findRecentLeadForPhone(conversation.companyId, phone, settings.existingLeadWindowDays);
   if (recent) {
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { leadId: recent.id, handoffState: "EXISTING_LEAD", handoffAt: new Date(), handoffReason: input.reason.slice(0, 1000) },
+      data: { leadId: recent.id, handoffState: "EXISTING_LEAD", handoffAt: now, handoffReason: input.reason.slice(0, 1000), ...wait, assignmentNoticeAt: null },
     });
     const followUp = await recordEscalation(
       conversation,
       "FOLLOW_UP",
-      `Cliente con lead existente (${recent.id}) escribe de nuevo: ${input.reason}`
+      `Cliente con lead existente (${recent.id}) trae una solicitud: ${input.reason}${propertyId ? ` (propiedad ${propertyId})` : ""}`
     );
     await logAuditEvent({
       companyId: conversation.companyId,
@@ -232,14 +300,19 @@ export async function requestCommercialHandoff(input: {
       eventType: "LEAD_DUPLICATE_SKIPPED",
       status: "skipped",
       message: "El asistente encontró un lead reciente del mismo teléfono; se vinculó la conversación sin reasignar.",
-      metadata: { conversationId: conversation.id },
+      metadata: { conversationId: conversation.id, propertyId },
     });
-    return { status: "existing_lead", advisor_first_name: firstName(recent.assignedAdvisor?.name), follow_up_recorded: followUp.created };
+    const name = advisorDisplayName(recent.assignedAdvisor?.name);
+    return {
+      status: "existing_lead",
+      advisor_name: name,
+      follow_up_recorded: followUp.created,
+      customer_message: buildAssignmentConfirmation(name ? { status: "existing", advisorName: name, advisorNotified: false } : { status: "no_advisor", advisorName: null, advisorNotified: false }),
+    };
   }
 
-  // 5. Lead nuevo por el motor existente. requestId estable por
-  // conversación: reintentos del mismo turno no crean otro lead.
-  const requestId = `conv:${conversation.id}:handoff`;
+  // 5. Lead nuevo por el motor existente.
+  const requestId = handoffRequestId(conversation);
   try {
     const result = await processIncomingLead(
       conversation.companyId,
@@ -259,23 +332,25 @@ export async function requestCommercialHandoff(input: {
     if (!result.selection.ok) {
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { leadId: result.leadId, handoffState: "NO_ADVISOR", handoffAt: new Date(), handoffReason: input.reason.slice(0, 1000) },
+        data: { leadId: result.leadId, handoffState: "NO_ADVISOR", handoffAt: now, handoffReason: input.reason.slice(0, 1000), ...wait, assignmentNoticeAt: null },
       });
       await recordEscalation(conversation, "HUMAN", "Sin asesores disponibles para canalizar al cliente.");
-      return { status: "no_advisor_available", pending_recorded: true };
+      return { status: "no_advisor_available", pending_recorded: true, customer_message: buildAssignmentConfirmation({ status: "no_advisor", advisorName: null, advisorNotified: false }) };
     }
 
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { leadId: result.leadId, handoffState: "ASSIGNED", handoffAt: new Date(), handoffReason: input.reason.slice(0, 1000) },
+      data: { leadId: result.leadId, handoffState: "ASSIGNED", handoffAt: now, handoffReason: input.reason.slice(0, 1000), ...wait, assignmentNoticeAt: null },
     });
+    const name = advisorDisplayName(result.selection.advisorName);
     return {
       status: "assigned",
       simulated: result.mode === "shadow",
-      advisor_first_name: firstName(result.selection.advisorName),
+      advisor_name: name,
       assignment_recorded: true,
       advisor_notified: result.manyChat.notified,
       crm_synced: result.easyBroker.confirmed,
+      customer_message: buildAssignmentConfirmation({ status: "assigned", advisorName: name, advisorNotified: result.manyChat.notified }),
     };
   } catch (error) {
     if (error instanceof DuplicatePhoneLeadError) {
@@ -285,18 +360,25 @@ export async function requestCommercialHandoff(input: {
       });
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { leadId: error.existing.id, handoffState: "EXISTING_LEAD", handoffAt: new Date(), handoffReason: input.reason.slice(0, 1000) },
+        data: { leadId: error.existing.id, handoffState: "EXISTING_LEAD", handoffAt: now, handoffReason: input.reason.slice(0, 1000), ...wait, assignmentNoticeAt: null },
       });
-      return { status: "existing_lead", advisor_first_name: firstName(existing?.assignedAdvisor?.name), follow_up_recorded: false };
+      const name = advisorDisplayName(existing?.assignedAdvisor?.name);
+      return {
+        status: "existing_lead",
+        advisor_name: name,
+        follow_up_recorded: false,
+        customer_message: buildAssignmentConfirmation(name ? { status: "existing", advisorName: name, advisorNotified: false } : { status: "no_advisor", advisorName: null, advisorNotified: false }),
+      };
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       const lead = await findLeadByRequestId(requestId);
       if (lead) {
         await prisma.conversation.update({
           where: { id: conversation.id },
-          data: { leadId: lead.id, handoffState: lead.assignedAdvisorId ? "ASSIGNED" : "NO_ADVISOR", handoffAt: new Date() },
+          data: { leadId: lead.id, handoffState: lead.assignedAdvisorId ? "ASSIGNED" : "NO_ADVISOR", handoffAt: now, ...wait },
         });
-        return { status: "already_assigned", advisor_first_name: null, follow_up_recorded: false };
+        const facts = await loadAssignmentFacts({ leadId: lead.id, handoffState: lead.assignedAdvisorId ? "ASSIGNED" : "NO_ADVISOR", handoffReason: null, isTest: false });
+        return { status: "already_assigned", advisor_name: facts?.advisorName ?? null, follow_up_recorded: false, customer_message: facts ? buildAssignmentConfirmation(facts) : null };
       }
     }
     console.error("[ASSISTANT] handoff comercial falló", error);
@@ -359,19 +441,24 @@ export async function requestManagement(input: {
   if (notified) {
     await prisma.conversationEscalation.update({ where: { id: escalation.id }, data: { status: "NOTIFIED", notifiedAt: new Date() } });
   }
-  if (input.conversation.handoffState === "NONE") {
-    await prisma.conversation.update({
-      where: { id: input.conversation.id },
-      data: { handoffState: "NOT_APPLICABLE", handoffReason: reason.slice(0, 1000), handoffAt: new Date() },
-    });
-  }
+  const now = new Date();
+  await prisma.conversation.update({
+    where: { id: input.conversation.id },
+    data: {
+      ...(input.conversation.handoffState === "NONE" ? { handoffState: "NOT_APPLICABLE", handoffReason: reason.slice(0, 1000), handoffAt: now } : {}),
+      ...waitFields(input.settings, "management", now),
+    },
+  });
   return { recorded: true, notified };
 }
 
 /**
- * Atención humana en el MISMO número: la IA deja de responder a este
- * contacto (control HUMAN) hasta que alguien la reanude desde el panel.
- * La pausa se aplica después de enviar la respuesta de este turno.
+ * El cliente pide una persona. Ya NO se detiene la IA de forma permanente
+ * (así Farid quedó atrapado): queda un pendiente HUMAN en el panel, aviso a
+ * gerencia si está configurado, y la espera automática de N minutos. Si una
+ * persona toma la conversación desde la bandeja de ManyChat, la
+ * automatización de ManyChat se pausa y los mensajes no llegan al bot; si
+ * además se quiere detener la IA aquí, es la pausa manual del panel.
  */
 export async function requestHuman(input: {
   conversation: Conversation;
@@ -386,5 +473,6 @@ export async function requestHuman(input: {
   if (notified) {
     await prisma.conversationEscalation.update({ where: { id: escalation.id }, data: { status: "NOTIFIED", notifiedAt: new Date() } });
   }
+  await prisma.conversation.update({ where: { id: input.conversation.id }, data: waitFields(input.settings, "human") });
   return { recorded: true, notified };
 }

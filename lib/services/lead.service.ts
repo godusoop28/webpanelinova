@@ -22,6 +22,7 @@ import {
 } from "@/lib/services/easybroker.service";
 import { notifyAdvisor, ManyChatApiError, type ManyChatCustomField } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
+import { recordPropertyInquirySafe } from "@/lib/services/property-inquiry.service";
 import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository";
 import { enqueueEasyBrokerCreate, enqueueEasyBrokerAssign, enqueueManyChatFlow } from "@/lib/services/retry.service";
 
@@ -282,6 +283,20 @@ export async function processIncomingLead(
         status: "ok",
         message: `Propiedad ${propertyPublicId} obtenida de EasyBroker.`,
       });
+      // Consulta por propiedad para los reportes (el asistente registra las suyas con más contexto).
+      if (context.source !== "assistant_conversation" && context.source !== "testing_ui") {
+        await recordPropertyInquirySafe({
+          companyId,
+          publicId: property.public_id,
+          contactKey: phone,
+          leadId: lead.id,
+          method: "lead_property_code",
+          evidence: property.public_id,
+          messageCount: 1,
+          source: "lead_webhook",
+          isTest: false,
+        });
+      }
     } catch (error) {
       await logAuditEvent({
         companyId,

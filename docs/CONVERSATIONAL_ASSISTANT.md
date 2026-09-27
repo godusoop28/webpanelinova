@@ -91,37 +91,117 @@ aditiva): `AssistantSettings`, `Conversation`, `ConversationMessage`,
 - Memoria: últimos 40 mensajes + resumen que el modelo actualiza cada turno.
   Solo mensajes capturados por este sistema; no hay historial previo de WhatsApp.
 
+## Identidad: CENTURION IA
+
+Nombre y marca centralizados en `lib/brand.ts` (**Century 21 Inova**, con
+una sola N; el slug técnico `century21-innova` y los nombres de flujos de
+ManyChat no se renombran). Se presenta como "Centurion" solo en el primer
+contacto ("¡Hola! Bienvenido a Century 21 Inova. Soy Centurion, tu asesor
+virtual…"); si el primer mensaje ya trae propiedad o necesidad, se presenta
+en una frase y la atiende. No finge ser humano y ofrece canalizar con un
+asesor cuando hace falta.
+
+## Espera tras canalizar y sesiones (desde 28-sep-2026)
+
+Incidente que lo originó: un contacto pidió "un humano" antes de que la IA
+estuviera activa; horas después escribió "Hola", la IA respondió al pedido
+viejo ("ya registré tu solicitud…") y lo dejó en pausa **permanente**
+(`control=HUMAN`), así que sus mensajes siguientes no tuvieron respuesta.
+
+Ahora hay dos conceptos separados:
+
+| | Espera automática | Pausa manual |
+|---|---|---|
+| Campo | `reopenAt` (+ `reopenReason`) | `control` HUMAN / PAUSED |
+| Quién la pone | el backend al completar una canalización (asesor asignado, lead existente, sin asesor, gerencia, pedido de persona) | una persona desde el panel |
+| Duración | `handoffReopenMinutes` (panel, 10 por defecto) **desde la canalización** | hasta que alguien la reanude |
+| Mensajes del cliente | se guardan (marca `duringWait`); aviso fijo, sin IA | se guardan; el bot no contesta |
+
+Reglas exactas:
+
+- El plazo se cuenta desde la canalización; los mensajes durante la espera
+  **no lo prolongan**.
+- Durante la espera, una ráfaga recibe **un** aviso fijo (no generado), a lo
+  más uno cada 5 minutos, con el nombre real del asesor si hay asignación
+  (y "ya fue enviada" solo si el aviso al asesor salió), y los minutos que
+  faltan. Nunca reasigna ni crea lead. Lo que no es saludo/agradecimiento
+  queda como pendiente FOLLOW_UP en el panel.
+- Al vencer **no se envía nada**. El siguiente mensaje abre una **sesión
+  nueva**: lo anterior pasa a `previousContext` (resumen, propiedades,
+  asesor) y a la IA le llega marcado como "conversación anterior". "Hola"
+  recibe un saludo normal; "sobre la casa que vimos…" usa ese contexto; una
+  solicitud nueva se trata como nueva.
+- También se abre sesión nueva tras 6 h sin mensajes del cliente (evita
+  contestar pedidos viejos como actuales).
+- Sesión nueva ≠ lead nuevo: se conservan lead, asesor e historial. Si en la
+  sesión nueva pide otra cosa, la regla de siempre (lead del mismo teléfono
+  en 30 días) lo vincula a su asesor y registra FOLLOW_UP. Idempotencia por
+  sesión (`conv:<id>:s<seq>:handoff`); bloqueo de fila al recibir, así dos
+  mensajes simultáneos abren una sola sesión.
+- La pausa manual nunca vence sola. Pedir "una persona" ya NO pausa la IA:
+  abre la espera y deja pendiente HUMAN (con aviso a gerencia si está
+  configurado). Si alguien atiende desde la bandeja de ManyChat, la
+  automatización de ManyChat se pausa (los mensajes no llegan al bot); para
+  detener la IA de forma explícita, usar la pausa manual del panel.
+- Conversaciones anteriores al cambio: la espera se calculó con su fecha real
+  de canalización (ya vencida). La única pausa que había puesto la IA se
+  convirtió en espera vencida; las pausas del panel no se tocaron.
+
+Estado visible en `/conversaciones`: "IA activa", "Esperando tras
+canalizar (N min)", "Pausada: atención humana", "Pausada manualmente".
+
+## Asesor comunicado
+
+El nombre sale del backend (`advisor.name` del lead), nunca de la IA:
+`request_commercial_handoff` devuelve `advisor_name` y `customer_message`,
+y el procesador agrega la confirmación si la respuesta no nombra al asesor
+(`assignmentNoticeAt`, una vez por canalización). Si el turno se descarta
+por un mensaje nuevo, el aviso de espera lo incluye; en el abandono
+(cliente que dejó de responder) se envía una confirmación fija. Nunca dice
+"ruleta" (se corrige). Distingue: asignado + aviso enviado / asignado +
+aviso pendiente / asesor vigente / sin asesor disponible. No promete que el
+asesor escriba por este mismo número.
+
 ## Enlaces de portales
 
-`resolve_link` → `resolvePropertyLink` (`lib/services/property-catalog.service.ts`)
-+ `lib/conversation/listing-extract.ts`:
+`resolve_link` → `resolvePropertyLink` (`lib/services/property-catalog.service.ts`),
+en este orden:
 
-1. Código EB- en la URL → directo.
-2. Enlace público de EasyBroker → por slug en el índice.
-3. Portal: descarga acotada y segura (solo HTTPS, dominios permitidos,
-   destino no privado, ≤3 redirecciones, 1.5 MB, 5 s). Lee og:title,
-   og:description, JSON-LD (nombre, precio, recámaras, dirección) y códigos
-   EB- del contenido principal. Un código EB- se verifica con EasyBroker
-   (los de otras inmobiliarias dan 404: nunca se toman como propios).
-4. Si el portal bloquea o exige sesión, solo se usan las palabras del
-   enlace. **No se intenta saltar bloqueos.**
-5. Cruce con el inventario: pesos por rareza de la palabra (IDF), frases de
-   dos palabras ("valle real" ≠ "valle imperial"), palabras genéricas del
-   sector ignoradas, penalización por tipo distinto (casa ≠ departamento);
-   el precio solo confirma. Confianza alta → propiedad única; media →
-   candidatas para que el cliente elija; baja → "no está en nuestro
-   inventario" (probablemente de otra inmobiliaria).
+1. Se normaliza el enlace: se desenvuelven redirecciones conocidas
+   (`l.facebook.com/l.php?u=`, `google.com/url?q=`), se quitan parámetros
+   de rastreo (`utm_*`, `fbclid`, `gclid`, …) y el fragmento. Se detectan
+   URLs sin `https://` de portales conocidos y enlaces como primer mensaje
+   (el estado que ve la IA lista los enlaces nuevos).
+2. Código EB- en la URL → exacto.
+3. Enlace público de EasyBroker → por slug en el índice.
+4. **Anuncio conocido**: EasyBroker reporta por API (`GET
+   /property_integrations`, verificado 27-sep-2026) los anuncios de cada
+   propiedad en Inmuebles24, Mercado Libre, Clasco, Pincali, ValoresAMPI…
+   con ID remoto o URL. Se sincronizan a `portal_listings` (con el índice,
+   cada 6 h) y la clave del anuncio (`150952267`, `MLM5337096612`…) se cruza
+   sin leer la página: sirve aunque el portal bloquee (Inmuebles24).
+5. Enlaces cortos (`meli.la`, `fb.me`): se sigue la redirección permitida y
+   se repiten 2–4 con el destino.
+6. Lectura pública de la página si el portal lo permite: código EB- o clave
+   interna (`internal_id`) exacta.
+7. Sin coincidencia exacta: candidatas por título/zona/precio (IDF, frases,
+   tipo, precio) que **siempre** requieren que el cliente confirme; nunca se
+   identifica una propiedad solo por un título parecido. Sin candidatas: "No
+   logré identificar con certeza esa propiedad. ¿Tienes el código o recuerdas
+   la ubicación? También puedo canalizarte con un asesor."
 
-Verificado en vivo el 27-sep-2026 (`lib/conversation/listing-extract.eval.ts`):
+Canalizar con una propiedad exige que esté identificada con certeza o
+confirmada (`get_property` tras la elección del cliente); si no, se canaliza
+sin propiedad (no se guarda una "parecida").
 
-| Portal | Lectura | Resultado |
+| Portal | Exacto por anuncio conocido | Lectura de página |
 |---|---|---|
-| Mercado Libre | ✅ | anuncios propios traen el código EB- → identificación exacta; otros → "no está en inventario" |
-| Vivanuncios | ⚠️ a veces 403 | con página: título/zona/código; bloqueado: palabras del enlace |
-| Inmuebles24 | ❌ 403 (anti-bots) | palabras del enlace → candidatas |
-| Lamudi | ❌ 403 | enlaces sin palabras → pide código/colonia |
-| Facebook | requiere sesión | pide código/colonia o descripción |
-| Casas y Terrenos, Propiedades.com, century21mexico.com | permitido | según lo que exponga la página |
+| Inmuebles24 | ✅ (ID de EasyBroker) | ❌ 403 |
+| Mercado Libre | ✅ (MLM en la URL) | ✅ (código EB- en la ficha) |
+| Clasco, Pincali, ValoresAMPI | ✅ | según el portal |
+| Lamudi | ❌ EasyBroker no reporta su URL | ❌ 403 |
+| Vivanuncios | ❌ no aparece en las integraciones | ⚠️ a veces 403 |
+| Facebook | ❌ no hay integración ni API de lectura | requiere sesión |
 
 Dominios configurables con `ASSISTANT_LINK_DOMAINS` (por defecto los de la
 tabla + `easybroker.com`, `fb.me`, `meli.la`).
@@ -148,6 +228,7 @@ responder, reclamo atómico QUEUED→SENDING y estado UNCERTAIN.
 - Silencio de agrupación (6 s) y espera máxima (25 s).
 - Aclaraciones sin progreso antes de ofrecer persona (3).
 - Minutos para canalizar interés confirmado sin respuesta (30; 0 = nunca).
+- Minutos de espera tras canalizar antes de reabrir con la IA (10; 0 = sin espera).
 - Días para reutilizar el lead del mismo teléfono (30).
 - Contactos de prueba y destinatarios de gerencia (subscriber IDs de
   ManyChat). Sin destinatarios de gerencia los pendientes quedan **solo en
@@ -247,8 +328,8 @@ Campos existentes relevantes: `nombre_lead` 14780313, `telefono_lead`
 ## Limitaciones conocidas
 
 - **Toma humana**: la API de ManyChat no informa si alguien respondió desde
-  Live Chat. Si una persona contesta en la bandeja, debe detener la IA en
-  `/conversaciones/<id>` (o ManyChat pausa la automatización y los mensajes
+  Live Chat. Si una persona contesta en la bandeja, conviene detener la IA en
+  `/conversaciones/<id>` (pausa manual, no vence) (o ManyChat pausa la automatización y los mensajes
   ni siquiera llegan al backend). "Registrar respuesta humana" guarda en la
   memoria lo que se respondió fuera del bot.
 - **Asesor ≠ transferencia**: asignar en EasyBroker no mueve la

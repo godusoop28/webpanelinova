@@ -1,4 +1,4 @@
-# Arquitectura — Panel Century 21 Innova
+# Arquitectura — Panel Century 21 Inova
 
 Sistema de producción: un solo proyecto Next.js que es panel administrativo,
 backend, receptor de webhooks y motor de asignación de leads, con
@@ -154,7 +154,7 @@ las URLs, headers y payloads exactos que hay que configurar en ManyChat.
 asistente: `AssistantSettings`, `Conversation`, `ConversationMessage`,
 `ConversationTurn`, `ConversationEscalation`, `PropertyCacheEntry`. Todos con
 `companyId` — el diseño es multiempresa desde el inicio aunque hoy solo
-exista Century 21 Innova (sembrada por `prisma/seed.ts`).
+exista Century 21 Inova (sembrada por `prisma/seed.ts`).
 
 ## Pruebas
 

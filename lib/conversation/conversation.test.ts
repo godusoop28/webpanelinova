@@ -152,7 +152,7 @@ describe("contrato con el modelo", () => {
 
   it("valida la salida final", () => {
     const facts = Object.fromEntries(
-      ["name", "operation", "property_type", "zone", "budget_min", "budget_max", "currency", "bedrooms", "timeframe", "own_property_location", "financing", "notes"].map((k) => [
+      ["name", "operation", "property_type", "zone", "budget_min", "budget_max", "currency", "bedrooms", "timeframe", "own_property_location", "financing", "heard_from", "notes"].map((k) => [
         k,
         { value: null, status: "unknown" },
       ])

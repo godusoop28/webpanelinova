@@ -7,14 +7,28 @@ import { isBurstReady } from "@/lib/conversation/burst";
 import { computeMissingFacts, hasRealEstateInterest, INTENT_LABELS, isNonCommercial, type ConversationIntentCode } from "@/lib/conversation/policy";
 import { PROMPT_VERSION } from "@/lib/conversation/prompt";
 import {
+  buildAssignmentConfirmation,
+  buildWaitNotice,
+  handoffInCurrentSession,
+  isLowSignalMessage,
+  isWaiting,
+  mentionsAdvisor,
+  remainingWaitMinutes,
+  shouldSendWaitNotice,
+  type WaitReason,
+} from "@/lib/conversation/session";
+import { BRAND_NAME } from "@/lib/brand";
+import {
   findConversationsDueForProcessing,
   releaseLease,
+  sessionOpeningData,
   tryClaimLease,
   isSimulatorConversation,
 } from "@/lib/services/conversation.service";
 import { getAssistantSettings, assistantHandles } from "@/lib/services/assistant-settings.service";
-import { runAssistantTurn, storedFacts, type HistoryMessage } from "@/lib/services/conversation-agent.service";
-import { recordEscalation, requestCommercialHandoff } from "@/lib/services/conversation-handoff.service";
+import { previousContextOf, runAssistantTurn, storedFacts, type AgentTurnResult, type HistoryMessage } from "@/lib/services/conversation-agent.service";
+import { loadAssignmentFacts, recordEscalation, requestCommercialHandoff } from "@/lib/services/conversation-handoff.service";
+import { contactKeyFor, recordPropertyInquirySafe } from "@/lib/services/property-inquiry.service";
 import { sendWhatsAppText, ManyChatApiError, ManyChatTimeoutError } from "@/lib/services/manychat.service";
 
 /** Reintentos del turno completo si OpenAI/infra falla: luego respuesta fija + pendiente humano. */
@@ -24,8 +38,7 @@ const MAX_SEND_ATTEMPTS = 3;
 /** Ventana de servicio de WhatsApp: fuera de ella el texto libre no es válido. */
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000 - 5 * 60 * 1000;
 
-const FALLBACK_REPLY =
-  "Gracias por tu mensaje. En este momento no pude procesarlo automáticamente; ya quedó registrado para que una persona del equipo de Century 21 Innova te atienda por este medio.";
+const FALLBACK_REPLY = `Gracias por tu mensaje. En este momento no pude procesarlo automáticamente; ya quedó registrado para que una persona del equipo de ${BRAND_NAME} te atienda.`;
 
 export type ProcessOutcome = "processed" | "idle" | "busy" | "waiting" | "not_handled" | "failed";
 
@@ -33,10 +46,10 @@ function newOwner(): string {
   return `p_${crypto.randomUUID()}`;
 }
 
-async function loadHistory(conversationId: string): Promise<HistoryMessage[]> {
+async function loadHistory(conversation: Pick<Conversation, "id" | "sessionStartSeq" | "processedSeq">): Promise<HistoryMessage[]> {
   const messages = await prisma.conversationMessage.findMany({
     where: {
-      conversationId,
+      conversationId: conversation.id,
       OR: [
         { role: "USER" },
         { role: { in: ["ASSISTANT", "HUMAN_AGENT"] }, status: { in: ["SENT", "SIMULATED", "UNCERTAIN", "QUEUED", "SENDING"] } },
@@ -44,9 +57,14 @@ async function loadHistory(conversationId: string): Promise<HistoryMessage[]> {
     },
     orderBy: { seq: "desc" },
     take: 60,
-    select: { role: true, text: true },
+    select: { role: true, text: true, seq: true },
   });
-  return messages.reverse().map((m) => ({ role: m.role as HistoryMessage["role"], text: m.text }));
+  return messages.reverse().map((m) => ({
+    role: m.role as HistoryMessage["role"],
+    text: m.text,
+    previousSession: m.seq < conversation.sessionStartSeq,
+    isNew: m.seq > conversation.processedSeq,
+  }));
 }
 
 /**
@@ -101,6 +119,18 @@ export async function processConversation(conversationId: string, budgetMs = 50_
         continue;
       }
 
+      // Espera tras canalizar: aviso fijo (sin IA, sin reasignar). Vencida,
+      // los mensajes pendientes abren una sesión nueva con la IA.
+      if (conversation.reopenAt) {
+        if (isWaiting(conversation.reopenAt, now)) {
+          await runWaitNotice(conversation);
+          outcome = "processed";
+        } else {
+          await openSessionForPending(conversation.id, now);
+        }
+        continue;
+      }
+
       const result = await runTurn(conversation);
       outcome = result === "failed" ? "failed" : "processed";
       if (result === "failed") break;
@@ -144,11 +174,11 @@ async function runTurn(conversation: Conversation): Promise<"completed" | "super
   });
 
   const [history, previousReplies] = await Promise.all([
-    loadHistory(conversation.id),
+    loadHistory(conversation),
     prisma.conversationMessage.count({ where: { conversationId: conversation.id, role: "ASSISTANT", status: { notIn: ["FAILED", "CANCELLED"] } } }),
   ]);
 
-  let result: Awaited<ReturnType<typeof runAssistantTurn>>;
+  let result: AgentTurnResult;
   try {
     result = await runAssistantTurn({ conversation, settings, history, isFirstReply: previousReplies === 0 });
   } catch (error) {
@@ -163,7 +193,7 @@ async function runTurn(conversation: Conversation): Promise<"completed" | "super
   const secondary = [...new Set(final.secondary_intents as ConversationIntentCode[])].filter((i) => i !== primary && i !== "UNKNOWN");
   const clarificationCount = final.asked_clarification && !final.made_progress ? conversation.clarificationCount + 1 : final.made_progress ? 0 : conversation.clarificationCount;
   const properties = mergeProperties(conversation.properties, result.verifiedProperties);
-  const reply = final.reply.trim();
+  let reply = final.reply.trim();
 
   const stateUpdate: Prisma.ConversationUpdateManyMutationInput = {
     primaryIntent: primary,
@@ -184,6 +214,23 @@ async function runTurn(conversation: Conversation): Promise<"completed" | "super
     toolCalls: { tools: result.toolTrace, corrections: result.corrections, promptVersion: PROMPT_VERSION } as unknown as Prisma.InputJsonValue,
     durationMs: Date.now() - startedAt,
   };
+
+  // El cliente debe saber a quién quedó asignada su solicitud, una sola vez
+  // por canalización, con el nombre real del backend (no el que diga la IA).
+  const afterTools = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+  let assignmentNotice = false;
+  if (
+    !afterTools.assignmentNoticeAt &&
+    handoffInCurrentSession(afterTools) &&
+    (afterTools.handoffState === "ASSIGNED" || afterTools.handoffState === "EXISTING_LEAD" || afterTools.handoffState === "NO_ADVISOR")
+  ) {
+    const facts = await loadAssignmentFacts(afterTools);
+    if (facts) {
+      if (!reply) reply = buildAssignmentConfirmation(facts);
+      else if (facts.advisorName && !mentionsAdvisor(reply, facts.advisorName)) reply = `${reply}\n\n${buildAssignmentConfirmation(facts)}`;
+      assignmentNotice = true;
+    }
+  }
 
   // Control de versión: solo se responde si no llegó nada nuevo desde que
   // empezó el turno. Si llegó, se conserva lo aprendido (y cualquier acción
@@ -219,17 +266,129 @@ async function runTurn(conversation: Conversation): Promise<"completed" | "super
         processedSeq: seq,
         processAfter: null,
         burstStartedAt: null,
-        ...(result.humanRequested
-          ? { control: "HUMAN", controlReason: "El cliente pidió atención humana (IA en pausa).", controlChangedAt: new Date(), controlChangedBy: "assistant" }
-          : {}),
+        // Pedir una persona ya no detiene la IA para siempre: abre la espera
+        // automática (requestHuman). La pausa permanente es solo manual.
+        ...(assignmentNotice && reply ? { assignmentNoticeAt: new Date() } : {}),
       },
     });
     await tx.conversationTurn.update({ where: { id: turn.id }, data: { ...turnData, status: "COMPLETED" } });
     return true;
   });
 
-  if (committed) await recordPostHandoffFollowUp(conversation, primary, secondary, final.summary);
+  await recordTurnInquiries(afterTools, result, fromSeq, targetSeq);
+  if (committed && !result.handoff) await recordPostHandoffFollowUp(conversation, primary, secondary, final.summary);
   return committed ? "completed" : "superseded";
+}
+
+/**
+ * Relación contacto ↔ propiedad consultada, con método y evidencia. Solo
+ * propiedades identificadas con certeza o confirmadas por el cliente (no
+ * candidatas que solo se mostraron). Una canalización sin propiedad no
+ * registra ninguna.
+ */
+async function recordTurnInquiries(conversation: Conversation, result: AgentTurnResult, fromSeq: number, toSeq: number) {
+  const ids = new Set<string>(result.final.property_ids.map((id) => id.toUpperCase()).filter((id) => result.identified.has(id)));
+  if (result.handoffPropertyId) ids.add(result.handoffPropertyId);
+  if (ids.size === 0) return;
+  const messageCount = await prisma.conversationMessage.count({
+    where: { conversationId: conversation.id, role: "USER", seq: { gte: fromSeq, lte: toSeq } },
+  });
+  const heardFrom = result.facts.heard_from?.status === "known" ? result.facts.heard_from.value : null;
+  for (const publicId of ids) {
+    const identified = result.identified.get(publicId);
+    await recordPropertyInquirySafe({
+      companyId: conversation.companyId,
+      publicId,
+      contactKey: contactKeyFor(conversation),
+      conversationId: conversation.id,
+      leadId: conversation.leadId,
+      method: identified?.method ?? "handoff",
+      evidence: identified?.evidence ?? publicId,
+      linkPortal: identified?.linkPortal ?? null,
+      declaredSource: heardFrom,
+      messageCount: Math.max(1, messageCount),
+      source: "assistant",
+      isTest: conversation.isTest,
+    });
+  }
+}
+
+/** Mensajes que llegaron durante la espera pero se procesan ya vencida: abren la sesión nueva desde el primero pendiente. */
+async function openSessionForPending(conversationId: string, now: Date) {
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId} FOR UPDATE`;
+    const current = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+    if (!current.reopenAt || isWaiting(current.reopenAt, now)) return;
+    await tx.conversation.update({
+      where: { id: conversationId },
+      data: await sessionOpeningData(tx, current, current.processedSeq + 1, now),
+    });
+  });
+}
+
+/**
+ * Aviso durante la espera tras canalizar. Fijo (no generado), con el nombre
+ * real del asesor cuando hay asignación confirmada y el tiempo restante; a
+ * lo más uno cada 5 minutos (una ráfaga es un solo aviso). No reasigna, no
+ * crea lead y no prolonga la espera. Lo que el cliente agregue con
+ * información útil queda como pendiente de seguimiento en el panel.
+ */
+async function runWaitNotice(conversation: Conversation): Promise<"done" | "superseded"> {
+  const now = new Date();
+  const targetSeq = conversation.lastSeq;
+  const fromSeq = conversation.processedSeq + 1;
+  const pending = await prisma.conversationMessage.findMany({
+    where: { conversationId: conversation.id, role: "USER", seq: { gte: fromSeq, lte: targetSeq } },
+    orderBy: { seq: "asc" },
+    select: { text: true },
+  });
+  const useful = pending.map((m) => m.text).filter((text) => !isLowSignalMessage(text));
+  let savedForTeam = false;
+  if (useful.length > 0) {
+    await recordEscalation(conversation, "FOLLOW_UP", `Mensaje del cliente durante la espera tras canalizar: ${useful.join(" / ")}`.slice(0, 1000));
+    savedForTeam = true;
+  }
+
+  const send = shouldSendWaitNotice({ now, waitNoticeAt: conversation.waitNoticeAt });
+  const reason = (conversation.reopenReason as WaitReason | null) ?? "commercial";
+  const assignment = reason === "commercial" ? await loadAssignmentFacts(conversation) : null;
+  const text = send
+    ? buildWaitNotice({ reason, assignment, minutesLeft: remainingWaitMinutes(conversation.reopenAt!, now), savedForTeam })
+    : null;
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversation.id} FOR UPDATE`;
+    const current = await tx.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    if (current.lastSeq !== targetSeq) return "superseded" as const;
+    let seq = current.lastSeq;
+    if (text) {
+      seq += 1;
+      await tx.conversationMessage.create({
+        data: {
+          conversationId: conversation.id,
+          companyId: conversation.companyId,
+          seq,
+          role: "ASSISTANT",
+          text,
+          status: isSimulatorConversation(conversation) ? "SIMULATED" : "QUEUED",
+          metadata: { waitNotice: true, reopenAt: current.reopenAt?.toISOString() ?? null },
+        },
+      });
+    }
+    await tx.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastSeq: seq,
+        processedSeq: seq,
+        processAfter: null,
+        burstStartedAt: null,
+        lastActivityAt: now,
+        ...(text ? { waitNoticeAt: now } : {}),
+        ...(text && assignment?.advisorName && !current.assignmentNoticeAt ? { assignmentNoticeAt: now } : {}),
+      },
+    });
+    return "done" as const;
+  });
 }
 
 /**
@@ -245,7 +404,8 @@ async function recordPostHandoffFollowUp(
   summary: string
 ) {
   if (before.handoffState !== "ASSIGNED" && before.handoffState !== "EXISTING_LEAD") return;
-  const known = new Set<string>([before.primaryIntent, ...before.secondaryIntents]);
+  const previous = previousContextOf(before) as { primaryIntent?: string; secondaryIntents?: string[] } | null;
+  const known = new Set<string>([before.primaryIntent, ...before.secondaryIntents, previous?.primaryIntent ?? "UNKNOWN", ...(previous?.secondaryIntents ?? [])]);
   const added = [primary, ...secondary].filter((intent) => intent !== "UNKNOWN" && intent !== "HUMAN_REQUEST" && !known.has(intent));
   if (added.length > 0) {
     await recordEscalation(before, "FOLLOW_UP", `Nueva necesidad tras la canalización: ${added.map((i) => INTENT_LABELS[i]).join(", ")}. ${summary}`);
@@ -477,7 +637,7 @@ async function handleAbandonedConversations(deadline: number): Promise<number> {
     if (!(await tryClaimLease(conversation.id, owner))) continue;
     try {
       const properties = Array.isArray(conversation.properties) ? (conversation.properties as { publicId: string }[]) : [];
-      await requestCommercialHandoff({
+      const handoff = await requestCommercialHandoff({
         conversation,
         settings,
         primaryIntent: primary,
@@ -488,10 +648,47 @@ async function handleAbandonedConversations(deadline: number): Promise<number> {
         propertyPublicId: properties.length === 1 ? properties[0].publicId : null,
         trigger: "abandonment",
       });
+      // El cliente ya no escribe: se le confirma una sola vez a quién quedó
+      // asignada su solicitud (dentro de la ventana de WhatsApp; si no, queda FAILED visible).
+      if (handoff.status === "assigned" || handoff.status === "existing_lead" || handoff.status === "no_advisor_available") {
+        await queueAssignmentConfirmation(conversation.id);
+        await flushOutbox(conversation.id);
+      }
       handled += 1;
     } finally {
       await releaseLease(conversation.id, owner);
     }
   }
   return handled;
+}
+
+/** Encola la confirmación de la canalización si todavía no se le comunicó al cliente. */
+async function queueAssignmentConfirmation(conversationId: string) {
+  const fresh = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+  if (fresh.assignmentNoticeAt) return;
+  const facts = await loadAssignmentFacts(fresh);
+  if (!facts) return;
+  const text = buildAssignmentConfirmation(facts);
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId} FOR UPDATE`;
+    const current = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+    if (current.assignmentNoticeAt) return;
+    const seq = current.lastSeq + 1;
+    const caughtUp = current.processedSeq === current.lastSeq;
+    await tx.conversationMessage.create({
+      data: {
+        conversationId,
+        companyId: current.companyId,
+        seq,
+        role: "ASSISTANT",
+        text,
+        status: isSimulatorConversation(current) ? "SIMULATED" : "QUEUED",
+        metadata: { assignmentConfirmation: true },
+      },
+    });
+    await tx.conversation.update({
+      where: { id: conversationId },
+      data: { lastSeq: seq, ...(caughtUp ? { processedSeq: seq } : {}), assignmentNoticeAt: new Date(), lastActivityAt: new Date() },
+    });
+  });
 }

@@ -133,6 +133,7 @@ export const FACT_KEYS = [
   "timeframe",
   "own_property_location",
   "financing",
+  "heard_from",
   "notes",
 ] as const;
 
@@ -150,6 +151,7 @@ export const FACT_LABELS: Record<FactKey, string> = {
   timeframe: "Plazo",
   own_property_location: "Ubicación de su inmueble",
   financing: "Forma de pago",
+  heard_from: "Dónde vio la propiedad / cómo nos conoció (dicho por el cliente)",
   notes: "Notas",
 };
 
@@ -204,7 +206,14 @@ export function computeMissingFacts(intent: ConversationIntentCode, facts: Facts
 // Respuestas del asistente: comprobaciones de seguridad sobre el texto
 // ---------------------------------------------------------------------------
 
-const ASSIGNMENT_CLAIM = /\b(asign(?:é|e|ado|ada|amos)|te (?:va|van) a contactar|te contactar(?:á|a|án|an)|ya (?:le )?avis(?:é|e|amos)|notifiqu(?:é|e)|ya (?:tienes|tiene) (?:un )?asesor)/i;
+/** El proceso interno de asignación no se nombra ante el cliente. */
+const INTERNAL_PROCESS_TERMS = /\bruleta\b/i;
+
+export function mentionsInternalProcess(reply: string): boolean {
+  return INTERNAL_PROCESS_TERMS.test(reply);
+}
+
+const ASSIGNMENT_CLAIM = /\b(asign(?:é|e|ado|ada|amos)|te canaliz(?:o|é|amos|aré)|(?:ya )?registr(?:é|amos) tu solicitud|te (?:va|van) a contactar|te contactar(?:á|a|án|an)|ya (?:le )?avis(?:é|e|amos)|notifiqu(?:é|e)|ya (?:tienes|tiene) (?:un )?asesor)/i;
 
 /**
  * Detecta si el texto afirma una asignación/aviso. El backend lo compara

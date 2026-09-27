@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { buildInboundDedupeKey, computeProcessAfter } from "@/lib/conversation/burst";
 import { extractEasyBrokerCodes } from "@/lib/conversation/property-reference";
+import { decideSession, handoffInCurrentSession } from "@/lib/conversation/session";
 import { assistantHandles, getAssistantSettings, isTestSubscriber } from "@/lib/services/assistant-settings.service";
 
 export const MAX_INBOUND_TEXT = 4000;
@@ -83,6 +84,13 @@ export async function ingestInboundMessage(companyId: string, input: InboundMess
 
     const now = new Date();
     const seq = current.lastSeq + 1;
+    // Espera tras canalizar / sesión nueva: solo si la IA atiende a este
+    // contacto y nadie la pausó a mano (la pausa manual nunca vence sola).
+    const session =
+      handledByAssistant && current.control === "AI"
+        ? decideSession({ now, reopenAt: current.reopenAt, lastInboundAt: current.lastInboundAt, hasHistory: current.lastSeq > 0 })
+        : "continue";
+    const inputMetadata = input.metadata ?? {};
     await tx.conversationMessage.create({
       data: {
         conversationId: current.id,
@@ -92,7 +100,10 @@ export async function ingestInboundMessage(companyId: string, input: InboundMess
         text,
         status: "RECEIVED",
         dedupeKey,
-        metadata: (input.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        metadata:
+          session === "wait" || Object.keys(inputMetadata).length > 0
+            ? ({ ...inputMetadata, ...(session === "wait" ? { duringWait: true } : {}) } as Prisma.InputJsonValue)
+            : undefined,
       },
     });
 
@@ -105,6 +116,7 @@ export async function ingestInboundMessage(companyId: string, input: InboundMess
       ...(phone && !current.phone ? { phone } : {}),
       ...(name ? { name } : {}),
       ...(campaignCode ? { campaignRef: campaignCode } : {}),
+      ...(session === "new_session" ? await sessionOpeningData(tx, current, seq, now) : {}),
     };
 
     if (!handledByAssistant) {
@@ -161,6 +173,59 @@ async function upsertConversation(
     }
     throw error;
   }
+}
+
+/**
+ * Abre una sesión conversacional nueva a partir de `startSeq`: lo anterior
+ * pasa a `previousContext` (contexto, no solicitud actual) y se limpia la
+ * espera. NO toca lead, asesor ni estado de canalización: una sesión nueva
+ * no es un lead nuevo ni una reasignación.
+ */
+export async function sessionOpeningData(
+  tx: Prisma.TransactionClient,
+  current: Conversation,
+  startSeq: number,
+  now: Date
+): Promise<Prisma.ConversationUpdateInput> {
+  const properties = Array.isArray(current.properties) ? current.properties : [];
+  const handedOff = current.handoffState === "ASSIGNED" || current.handoffState === "EXISTING_LEAD";
+  const sessionHadContent = Boolean(current.summary) || properties.length > 0 || current.handoffState !== "NONE";
+  let previousContext: Prisma.InputJsonValue | undefined;
+  if (sessionHadContent) {
+    const lead = handedOff && current.leadId
+      ? await tx.lead.findUnique({ where: { id: current.leadId }, select: { assignedAdvisor: { select: { name: true } } } })
+      : null;
+    previousContext = {
+      endedAt: (current.lastInboundAt ?? current.lastActivityAt).toISOString(),
+      summary: current.summary,
+      facts: (current.facts ?? {}) as Prisma.InputJsonValue,
+      properties: properties as Prisma.InputJsonValue,
+      primaryIntent: current.primaryIntent,
+      secondaryIntents: current.secondaryIntents,
+      handoffState: current.handoffState,
+      handoffAt: current.handoffAt?.toISOString() ?? null,
+      handoffInSession: handoffInCurrentSession(current),
+      advisorName: lead?.assignedAdvisor?.name ?? null,
+    };
+  }
+  const facts = current.facts && typeof current.facts === "object" && !Array.isArray(current.facts) ? (current.facts as Record<string, unknown>) : {};
+  return {
+    ...(previousContext ? { previousContext } : {}),
+    // Solo el nombre sobrevive: zona, presupuesto o propiedad de antes no se mezclan con la solicitud nueva.
+    facts: facts.name ? ({ name: facts.name } as Prisma.InputJsonValue) : {},
+    properties: [],
+    summary: null,
+    missingData: [],
+    clarificationCount: 0,
+    primaryIntent: "UNKNOWN",
+    secondaryIntents: [],
+    reopenAt: null,
+    reopenReason: null,
+    waitNoticeAt: null,
+    sessionStartSeq: startSeq,
+    sessionStartedAt: now,
+    sessionCount: { increment: 1 },
+  };
 }
 
 // ---------------------------------------------------------------------------

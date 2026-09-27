@@ -10,7 +10,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 import bcrypt from "bcryptjs";
 
 const COMPANY_SLUG = "century21-innova";
-const COMPANY_NAME = "Century 21 Innova";
+const COMPANY_NAME = "Century 21 Inova";
 const BCRYPT_ROUNDS = 10;
 
 async function main() {

@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
  * Actions / páginas (lib/dal.ts) antes de llegar aquí.
  */
 
-export type ConversationFilter = "all" | "attention" | "ai" | "human" | "paused" | "handed_off" | "errors" | "test";
+export type ConversationFilter = "all" | "attention" | "ai" | "waiting" | "human" | "paused" | "handed_off" | "errors" | "test";
 
 export async function listConversations(input: {
   companyId: string;
@@ -28,6 +28,11 @@ export async function listConversations(input: {
       break;
     case "ai":
       where.control = "AI";
+      where.OR = [{ reopenAt: null }, { reopenAt: { lte: new Date() } }];
+      break;
+    case "waiting":
+      where.control = "AI";
+      where.reopenAt = { gt: new Date() };
       break;
     case "human":
       where.control = "HUMAN";
@@ -222,9 +227,25 @@ export async function requeueMessage(input: { companyId: string; messageId: stri
 
 export const CONTROL_LABELS: Record<ConversationControl, string> = {
   AI: "IA activa",
-  HUMAN: "Atención humana",
-  PAUSED: "IA en pausa",
+  HUMAN: "Pausada: atención humana",
+  PAUSED: "Pausada manualmente",
 };
+
+export type ConversationStatus = { key: "ai" | "waiting" | "human" | "paused"; label: string; tone: "success" | "gold" | "warning" };
+
+/**
+ * Estado visible: pausa manual (una persona) > espera automática tras
+ * canalizar > IA activa. La espera vence sola; la pausa manual no.
+ */
+export function conversationStatus(conversation: { control: ConversationControl; reopenAt: Date | null }, now = new Date()): ConversationStatus {
+  if (conversation.control === "HUMAN") return { key: "human", label: CONTROL_LABELS.HUMAN, tone: "warning" };
+  if (conversation.control === "PAUSED") return { key: "paused", label: CONTROL_LABELS.PAUSED, tone: "warning" };
+  if (conversation.reopenAt && conversation.reopenAt.getTime() > now.getTime()) {
+    const minutes = Math.max(1, Math.ceil((conversation.reopenAt.getTime() - now.getTime()) / 60_000));
+    return { key: "waiting", label: `Esperando tras canalizar (${minutes} min)`, tone: "gold" };
+  }
+  return { key: "ai", label: CONTROL_LABELS.AI, tone: "success" };
+}
 
 export const HANDOFF_LABELS: Record<ConversationHandoffState, string> = {
   NONE: "Sin canalizar",

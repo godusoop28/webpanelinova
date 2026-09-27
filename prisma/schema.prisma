@@ -1,5 +1,5 @@
 // Century 21 Inova - Panel Administrativo
-// Modelo multiempresa: Century 21 Innova es la primera Company, pero ningún
+// Modelo multiempresa: Century 21 Inova es la primera Company, pero ningún
 // modelo asume que es la única (ver docs/MIGRATION_TO_DATABASE.md).
 
 generator client {
@@ -101,6 +101,8 @@ model Company {
   escalations       ConversationEscalation[]
   assistantSettings AssistantSettings?
   propertyCache     PropertyCacheEntry[]
+  portalListings    PortalListing[]
+  propertyInquiries PropertyInquiry[]
 
   @@map("companies")
 }
@@ -207,6 +209,7 @@ model Lead {
   auditLogs       AuditLog[]
   integrationJobs IntegrationJob[]
   conversations   Conversation[]
+  inquiries       PropertyInquiry[]
 
   @@index([phone])
   @@index([createdAt])
@@ -455,6 +458,8 @@ model AssistantSettings {
   abandonHandoffMinutes   Int           @default(30)
   /** Un lead de este teléfono dentro de esta ventana se reutiliza: no se reasigna. */
   existingLeadWindowDays  Int           @default(30)
+  /** Espera automática tras una canalización completada: pasado este tiempo, el siguiente mensaje abre una nueva sesión con la IA. */
+  handoffReopenMinutes    Int           @default(10)
   /** Subscriber IDs de ManyChat autorizados para pruebas (modo TEST_ONLY). */
   testSubscriberIds       String[]      @default([])
   /** Subscriber IDs de ManyChat de gerencia; vacío = los pendientes quedan solo en el panel. */
@@ -487,6 +492,24 @@ model Conversation {
   handoffReason String?
   handoffAt     DateTime?
   leadId        String?
+
+  // --- Espera automática tras canalizar (distinta de la pausa manual `control`) ---
+  /** Hasta cuándo el bot solo da el aviso de espera. Se cuenta desde la canalización; los mensajes no lo prolongan. null = sin espera. */
+  reopenAt         DateTime?
+  /** commercial | human | management: qué se canalizó (para el texto del aviso). */
+  reopenReason     String?
+  /** Último aviso de espera enviado (limita la repetición). */
+  waitNoticeAt     DateTime?
+  /** Cuándo se le dijo al cliente el asesor asignado (una sola vez por canalización). */
+  assignmentNoticeAt DateTime?
+
+  // --- Sesión conversacional (NO es un lead nuevo ni una reasignación) ---
+  /** Primer mensaje de la sesión actual; los anteriores son contexto de sesiones previas. */
+  sessionStartSeq  Int       @default(0)
+  sessionStartedAt DateTime?
+  sessionCount     Int       @default(1)
+  /** Resumen de la sesión anterior: { summary, facts, properties, primaryIntent, handoff, endedAt }. */
+  previousContext  Json?
 
   primaryIntent      ConversationIntent   @default(UNKNOWN)
   secondaryIntents   ConversationIntent[] @default([])
@@ -522,6 +545,7 @@ model Conversation {
   messages    ConversationMessage[]
   turns       ConversationTurn[]
   escalations ConversationEscalation[]
+  inquiries   PropertyInquiry[]
 
   @@unique([companyId, channel, manyChatSubscriberId])
   @@index([companyId, lastActivityAt])
@@ -612,6 +636,8 @@ model PropertyCacheEntry {
   bedrooms     Int?
   bathrooms    Float?
   publicUrl    String?
+  /** Clave interna de la inmobiliaria en EasyBroker (internal_id), cuando existe: identifica por código exacto. */
+  internalId   String?
   searchText   String
   ebUpdatedAt  String?
   published    Boolean  @default(true)
@@ -622,4 +648,80 @@ model PropertyCacheEntry {
   @@unique([companyId, publicId])
   @@index([companyId, published])
   @@map("property_cache")
+}
+
+/**
+ * Anuncio de una propiedad propia en un portal, tal como lo reporta
+ * EasyBroker (GET /property_integrations: remote_listing_id y listing_url).
+ * Permite identificar con certeza un enlace de Inmuebles24/Mercado Libre/…
+ * aunque el portal bloquee la lectura de la página.
+ */
+model PortalListing {
+  id          String   @id @default(cuid())
+  companyId   String
+  publicId    String
+  /** Símbolo del portal en EasyBroker (inmuebles24, mercado_libre, clasco…). */
+  portal      String
+  portalName  String
+  /** Clave estable del anuncio extraída del ID/URL (p. ej. "150952267", "MLM5337096612"). */
+  externalKey String
+  listingUrl  String?
+  published   Boolean  @default(false)
+  status      String?
+  /** easybroker_integration (API oficial) | panel (alta manual verificada). */
+  source      String   @default("easybroker_integration")
+  syncedAt    DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, portal, externalKey])
+  @@index([companyId, publicId])
+  @@map("portal_listings")
+}
+
+/**
+ * Un contacto preguntó por una propiedad (una fila por contacto, propiedad
+ * y día de Ciudad de México). Un contacto puede interesarse en varias
+ * propiedades. Los reportes cuentan contactos DISTINTOS por periodo, así
+ * que muchos mensajes no inflan el conteo.
+ */
+model PropertyInquiry {
+  id             String   @id @default(cuid())
+  companyId      String
+  publicId       String
+  /** Teléfono E.164 del contacto (o subscriber ID si no hay teléfono). */
+  contactKey     String
+  /** Día (AAAA-MM-DD) en America/Mexico_City. */
+  day            String
+  conversationId String?
+  leadId         String?
+  /** Canal de contacto (whatsapp). NO es la fuente de adquisición. */
+  channel        String   @default("whatsapp")
+  /** Portal del enlace que pegó el cliente (no prueba de dónde llegó). */
+  linkPortal     String?
+  /** Cómo se identificó: code_in_message, easybroker_link, portal_listing, portal_page_code, internal_code, confirmed_candidate, lead_property_code… */
+  method         String
+  /** Evidencia de la identificación (enlace o código; sin datos personales). */
+  evidence       String?
+  /** Fuente/campaña de adquisición, solo con evidencia. */
+  acquisitionSource String?
+  /** Dónde dijo el cliente que vio la propiedad. */
+  declaredSource String?
+  /** Mensajes del contacto en los que se habló de la propiedad ese día (métrica separada). */
+  messageCount   Int      @default(1)
+  /** assistant | lead_webhook | lead_backfill */
+  source         String
+  isTest         Boolean  @default(false)
+  firstAt        DateTime @default(now())
+  lastAt         DateTime @default(now())
+
+  company      Company       @relation(fields: [companyId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  lead         Lead?         @relation(fields: [leadId], references: [id])
+
+  @@unique([companyId, publicId, contactKey, day])
+  @@index([companyId, day])
+  @@index([companyId, publicId])
+  @@map("property_inquiries")
 }

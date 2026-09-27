@@ -71,13 +71,18 @@ vi.mock("@/lib/services/easybroker.service", async () => {
   const actual = await vi.importActual<typeof import("@/lib/services/easybroker.service")>("@/lib/services/easybroker.service");
   return {
     ...actual,
-    getProperty: async (id: string) => ({ public_id: id, title: "Casa de prueba", agent: { email: "contacto@c21inova.com" } }),
+    // EB-DI0001 tiene asesor propio (asignación directa); el resto, el correo comodín (ruleta).
+    getProperty: async (id: string) => ({
+      public_id: id,
+      title: "Casa de prueba",
+      agent: { email: id === "EB-DI0001" ? "directo@c21inova.com" : "contacto@c21inova.com" },
+    }),
   };
 });
 
 function emptyFacts() {
   return Object.fromEntries(
-    ["name", "operation", "property_type", "zone", "budget_min", "budget_max", "currency", "bedrooms", "timeframe", "own_property_location", "financing", "notes"].map((k) => [
+    ["name", "operation", "property_type", "zone", "budget_min", "budget_max", "currency", "bedrooms", "timeframe", "own_property_location", "financing", "heard_from", "notes"].map((k) => [
       k,
       { value: null, status: "unknown" },
     ])
@@ -99,6 +104,8 @@ function fakeResult(reply: string, overrides: Record<string, unknown> = {}) {
     },
     facts: {},
     verifiedProperties: [],
+    identified: new Map(),
+    handoffPropertyId: null,
     toolTrace: [],
     usage: { inputTokens: 10, outputTokens: 5 },
     humanRequested: false,
@@ -152,11 +159,11 @@ beforeAll(async () => {
   // Base local de prueba (verificado arriba): se parte de cero en cada corrida.
   await m.prisma.$executeRawUnsafe(
     `TRUNCATE conversation_messages, conversation_turns, conversation_escalations, conversations, assistant_settings, property_cache,
-      integration_jobs, audit_logs, lead_assignments, leads, advisors RESTART IDENTITY CASCADE`
+      integration_jobs, audit_logs, lead_assignments, property_inquiries, portal_listings, leads, advisors RESTART IDENTITY CASCADE`
   );
   const company = await m.prisma.company.upsert({
     where: { slug: "century21-innova" },
-    create: { name: "Century 21 Innova", slug: "century21-innova" },
+    create: { name: "Century 21 Inova", slug: "century21-innova" },
     update: {},
   });
   companyId = company.id;
@@ -171,7 +178,7 @@ beforeEach(async () => {
   doubles.agentImpl = null;
   doubles.sent = [];
   doubles.sendImpl = null;
-  await setSettings({ mode: "ON", debounceSeconds: 1, maxWaitSeconds: 5, testSubscriberIds: [], abandonHandoffMinutes: 30, existingLeadWindowDays: 30 });
+  await setSettings({ mode: "ON", debounceSeconds: 1, maxWaitSeconds: 5, testSubscriberIds: [], abandonHandoffMinutes: 30, existingLeadWindowDays: 30, handoffReopenMinutes: 10 });
 });
 
 async function conversationOf(subscriberId: string) {
@@ -393,7 +400,9 @@ describe("canalización con el motor de asignación existente", () => {
   it("crea UN lead y UNA asignación; repetir la solicitud no reasigna", async () => {
     const { conv, settings } = await makeConversation();
     const first = await m.handoff({ conversation: conv, settings, primaryIntent: "RENT", ...handoffInput });
-    expect(first).toMatchObject({ status: "assigned", assignment_recorded: true, advisor_first_name: "Laura" });
+    expect(first).toMatchObject({ status: "assigned", assignment_recorded: true, advisor_name: "Laura Prueba" });
+    expect((first as { customer_message: string }).customer_message).toContain("Laura Prueba");
+    expect((first as { customer_message: string }).customer_message).not.toMatch(/ruleta/i);
     const again = await m.handoff({
       conversation: await m.prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } }),
       settings,
@@ -464,6 +473,11 @@ describe("canalización con el motor de asignación existente", () => {
     const r = await m.prisma.conversation.findUniqueOrThrow({ where: { id: renter.id }, include: { lead: true } });
     expect(r.handoffState).toBe("ASSIGNED");
     expect(r.lead?.route).toBe("Timeout");
+    // Se le confirma una sola vez a quién quedó asignada su solicitud.
+    const confirmations = await m.prisma.conversationMessage.findMany({ where: { conversationId: renter.id, role: "ASSISTANT" } });
+    expect(confirmations).toHaveLength(1);
+    expect(confirmations[0].text).toContain("Laura Prueba");
+    expect(r.assignmentNoticeAt).not.toBeNull();
     expect((await m.prisma.conversation.findUniqueOrThrow({ where: { id: provider.id } })).handoffState).toBe("NONE");
     expect((await m.prisma.conversation.findUniqueOrThrow({ where: { id: hello.id } })).handoffState).toBe("NONE");
   });
@@ -496,5 +510,201 @@ describe("endpoint /api/webhooks/manychat/message", () => {
     await setSettings({ mode: "OFF" });
     const off = await call(`{"subscriber_id":"${nextSubscriber()}","text":"hola"}`);
     expect(await off.json()).toMatchObject({ handled: "false" });
+  });
+});
+
+describe("espera de 10 minutos tras canalizar, sesiones y asesor comunicado", () => {
+  let directAdvisorId: string;
+  beforeAll(async () => {
+    const direct = await m.prisma.advisor.create({
+      data: { companyId, name: "Diego Directo", phone: "+523300000009", easyBrokerEmail: "directo@c21inova.com", weight: 0 },
+    });
+    directAdvisorId = direct.id;
+  });
+
+  /** Doble del agente que sí canaliza con el motor real y responde SIN nombrar al asesor. */
+  function agentThatHandsOff(propertyPublicId: string | null, reply = "Listo, ya quedó tu solicitud.") {
+    return async (input: { conversation: Conversation }) => {
+      const settings = await m.prisma.assistantSettings.findUniqueOrThrow({ where: { companyId } });
+      const fresh = await m.prisma.conversation.findUniqueOrThrow({ where: { id: input.conversation.id } });
+      const handoff = await m.handoff({
+        conversation: fresh,
+        settings,
+        primaryIntent: propertyPublicId ? "PROPERTY_INQUIRY" : "RENT",
+        secondaryIntents: [],
+        facts: {},
+        summary: "Resumen",
+        reason: "Quiere información",
+        propertyPublicId,
+        trigger: "assistant",
+      });
+      return { ...fakeResult(reply, { primary_intent: propertyPublicId ? "PROPERTY_INQUIRY" : "RENT" }), handoff };
+    };
+  }
+
+  async function handedOffConversation(propertyPublicId: string | null = null) {
+    const sub = nextSubscriber();
+    await m.ingest(companyId, { subscriberId: sub, text: "me interesa", phone: `55${sub}1111`.slice(0, 10), name: "Farid" });
+    const conv = await conversationOf(sub);
+    doubles.agentImpl = agentThatHandsOff(propertyPublicId);
+    await m.processConversation(conv.id, 60_000);
+    doubles.agentImpl = null;
+    return { sub, conv: await conversationOf(sub) };
+  }
+
+  it("C: canalización por ruleta comunica el asesor real aunque la IA no lo nombre, una sola vez", async () => {
+    const { conv } = await handedOffConversation(null);
+    expect(conv.handoffState).toBe("ASSIGNED");
+    expect(doubles.sent).toHaveLength(1);
+    expect(doubles.sent[0].text).toContain("Listo, ya quedó tu solicitud.");
+    expect(doubles.sent[0].text).toContain("Laura Prueba");
+    expect(doubles.sent[0].text).not.toMatch(/ruleta/i);
+    expect(conv.assignmentNoticeAt).not.toBeNull();
+    expect(conv.reopenAt!.getTime() - conv.handoffAt!.getTime()).toBe(10 * 60_000);
+  });
+
+  it("D: canalización directa (asesor propio de la propiedad) comunica a ese asesor", async () => {
+    const { conv } = await handedOffConversation("EB-DI0001");
+    const lead = await m.prisma.lead.findUniqueOrThrow({ where: { id: conv.leadId! }, include: { assignments: true } });
+    expect(lead.assignedAdvisorId).toBe(directAdvisorId);
+    expect(lead.assignments[0].method).toBe("DIRECT_PROPERTY_ADVISOR");
+    expect(doubles.sent[0].text).toContain("Diego Directo");
+  });
+
+  it("E/G: durante la espera, una ráfaga recibe UN aviso fijo sin IA ni reasignación, y no prolonga la espera", async () => {
+    const { sub, conv } = await handedOffConversation(null);
+    doubles.sent = [];
+    const leadsBefore = await m.prisma.lead.count();
+    const assignmentsBefore = await m.prisma.leadAssignment.count();
+    for (const text of ["gracias", "¿tiene alberca?", "ok"]) await m.ingest(companyId, { subscriberId: sub, text });
+    await m.processConversation(conv.id, 60_000);
+    expect(doubles.agentCalls).toHaveLength(1); // solo el turno de la canalización
+    expect(doubles.sent).toHaveLength(1);
+    expect(doubles.sent[0].text).toMatch(/^Tu solicitud ya (fue enviada|quedó asignada) a Laura Prueba/);
+    expect(doubles.sent[0].text).toMatch(/espera (10|9) minutos y vuelve a escribir/);
+    expect(doubles.sent[0].text).toMatch(/Guardé tu mensaje/);
+    const after = await conversationOf(sub);
+    expect(after.reopenAt!.getTime()).toBe(conv.reopenAt!.getTime());
+    expect(after.messages.filter((x) => (x.metadata as { duringWait?: boolean } | null)?.duringWait)).toHaveLength(3);
+    expect(await m.prisma.lead.count()).toBe(leadsBefore);
+    expect(await m.prisma.leadAssignment.count()).toBe(assignmentsBefore);
+    expect(await m.prisma.conversationEscalation.count({ where: { conversationId: conv.id, type: "FOLLOW_UP" } })).toBe(1);
+
+    // Otro mensaje enseguida: no se repite el aviso (máximo uno cada 5 minutos).
+    doubles.sent = [];
+    await m.ingest(companyId, { subscriberId: sub, text: "hola?" });
+    await m.processConversation(conv.id, 60_000);
+    expect(doubles.sent).toHaveLength(0);
+    const latest = await conversationOf(sub);
+    expect(latest.processedSeq).toBe(latest.lastSeq);
+  });
+
+  it("F/H/J: vencida la espera, 'Hola' abre sesión nueva con la IA y conserva lead, asesor y contexto", async () => {
+    const { sub, conv } = await handedOffConversation(null);
+    await m.prisma.conversation.update({ where: { id: conv.id }, data: { reopenAt: new Date(Date.now() - 1000) } });
+    const leadsBefore = await m.prisma.lead.count();
+    let seen: { role: string; text: string; previousSession?: boolean }[] = [];
+    doubles.agentImpl = async (input) => {
+      seen = input.history as typeof seen;
+      return fakeResult("¡Hola de nuevo! ¿En qué te puedo ayudar?", { primary_intent: "UNKNOWN" });
+    };
+    doubles.sent = [];
+    await m.ingest(companyId, { subscriberId: sub, text: "Hola" });
+    await m.processConversation(conv.id, 60_000);
+    expect(doubles.sent.map((s) => s.text)).toEqual(["¡Hola de nuevo! ¿En qué te puedo ayudar?"]);
+    const after = await conversationOf(sub);
+    expect(after.sessionCount).toBe(2);
+    expect(after.reopenAt).toBeNull();
+    expect(after.leadId).toBe(conv.leadId);
+    expect(after.handoffState).toBe("ASSIGNED");
+    expect((after.previousContext as { advisorName?: string }).advisorName).toBe("Laura Prueba");
+    expect(await m.prisma.lead.count()).toBe(leadsBefore);
+    // Lo anterior llega marcado como sesión previa; solo "Hola" es actual.
+    expect(seen.filter((h) => !h.previousSession).map((h) => h.text)).toEqual(["Hola"]);
+    expect(seen.some((h) => h.previousSession && h.text === "me interesa")).toBe(true);
+  });
+
+  it("J: una solicitud nueva en la sesión nueva no crea otro lead ni reasigna (seguimiento del mismo asesor)", async () => {
+    const { sub, conv } = await handedOffConversation(null);
+    await m.prisma.conversation.update({ where: { id: conv.id }, data: { reopenAt: new Date(Date.now() - 1000) } });
+    const leadsBefore = await m.prisma.lead.count();
+    doubles.agentImpl = agentThatHandsOff("EB-ZZ0002", "Anoté tu interés en esta otra casa.");
+    doubles.sent = [];
+    await m.ingest(companyId, { subscriberId: sub, text: "ahora me interesa la EB-ZZ0002" });
+    await m.processConversation(conv.id, 60_000);
+    expect(await m.prisma.lead.count()).toBe(leadsBefore);
+    const after = await conversationOf(sub);
+    expect(after.handoffState).toBe("EXISTING_LEAD");
+    expect(after.leadId).toBe(conv.leadId);
+    expect(doubles.sent[0].text).toContain("Laura Prueba");
+    const followUp = await m.prisma.conversationEscalation.findFirstOrThrow({ where: { conversationId: conv.id, type: "FOLLOW_UP" } });
+    expect(followUp.reason).toContain("EB-ZZ0002");
+  });
+
+  it("H (caso Farid): un pedido viejo de humano no se contesta como actual horas después", async () => {
+    const sub = nextSubscriber();
+    await m.ingest(companyId, { subscriberId: sub, text: "Quiero que me atienda un humano", phone: "3317690125" });
+    const conv = await conversationOf(sub);
+    await m.prisma.conversation.update({
+      where: { id: conv.id },
+      data: { processedSeq: 1, processAfter: null, lastInboundAt: new Date(Date.now() - 14 * 3600_000) },
+    });
+    let seen: { text: string; previousSession?: boolean; isNew?: boolean }[] = [];
+    doubles.agentImpl = async (input) => {
+      seen = input.history as typeof seen;
+      return fakeResult("¡Hola! ¿En qué te puedo ayudar?", { primary_intent: "UNKNOWN" });
+    };
+    await m.ingest(companyId, { subscriberId: sub, text: "Hola" });
+    await m.processConversation(conv.id, 60_000);
+    expect(seen.find((h) => h.text === "Quiero que me atienda un humano")?.previousSession).toBe(true);
+    expect(seen.filter((h) => h.isNew).map((h) => h.text)).toEqual(["Hola"]);
+    expect((await conversationOf(sub)).sessionCount).toBe(2);
+  });
+
+  it("pedir una persona abre la espera automática; ya no pausa la IA para siempre", async () => {
+    const sub = nextSubscriber();
+    await m.ingest(companyId, { subscriberId: sub, text: "quiero hablar con alguien" });
+    const conv = await conversationOf(sub);
+    const { requestHuman } = await import("@/lib/services/conversation-handoff.service");
+    const settings = await m.prisma.assistantSettings.findUniqueOrThrow({ where: { companyId } });
+    await requestHuman({ conversation: conv, settings, reason: "Pide una persona", summary: null });
+    const after = await conversationOf(sub);
+    expect(after.control).toBe("AI");
+    expect(after.reopenReason).toBe("human");
+    expect(after.reopenAt!.getTime()).toBeGreaterThan(Date.now());
+    expect(await m.prisma.conversationEscalation.count({ where: { conversationId: conv.id, type: "HUMAN" } })).toBe(1);
+  });
+
+  it("I: la pausa manual no se libera por el temporizador", async () => {
+    const { sub, conv } = await handedOffConversation(null);
+    await m.admin.setConversationControl({ companyId, conversationId: conv.id, control: "HUMAN", reason: "la atiende gerencia", by: "test@x" });
+    await m.prisma.conversation.update({ where: { id: conv.id }, data: { reopenAt: new Date(Date.now() - 60_000) } });
+    doubles.sent = [];
+    const r = await m.ingest(companyId, { subscriberId: sub, text: "Hola" });
+    expect(r).toMatchObject({ handled: true, shouldProcess: false });
+    await m.processConversation(conv.id, 60_000);
+    expect(doubles.sent).toHaveLength(0);
+    expect((await conversationOf(sub)).control).toBe("HUMAN");
+  });
+
+  it("dos mensajes simultáneos tras la espera abren UNA sola sesión", async () => {
+    const { sub, conv } = await handedOffConversation(null);
+    await m.prisma.conversation.update({ where: { id: conv.id }, data: { reopenAt: new Date(Date.now() - 1000) } });
+    await Promise.all([m.ingest(companyId, { subscriberId: sub, text: "hola" }), m.ingest(companyId, { subscriberId: sub, text: "otra duda" })]);
+    expect((await conversationOf(sub)).sessionCount).toBe(2);
+  });
+});
+
+describe("consultas por propiedad", () => {
+  it("L/M: cinco mensajes = una consulta por día; dos propiedades = una en cada una", async () => {
+    const { recordPropertyInquiry } = await import("@/lib/services/property-inquiry.service");
+    const base = { companyId, contactKey: "+523300001234", method: "code_in_message", messageCount: 1, source: "assistant" as const, isTest: false };
+    for (let i = 0; i < 5; i++) await recordPropertyInquiry({ ...base, publicId: "EB-AA0001" });
+    await recordPropertyInquiry({ ...base, publicId: "eb-bb0002" });
+    const rows = await m.prisma.propertyInquiry.findMany({ where: { contactKey: base.contactKey }, orderBy: { publicId: "asc" } });
+    expect(rows.map((r) => [r.publicId, r.messageCount])).toEqual([
+      ["EB-AA0001", 5],
+      ["EB-BB0002", 1],
+    ]);
   });
 });

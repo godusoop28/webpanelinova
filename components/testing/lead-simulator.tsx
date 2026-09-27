@@ -22,7 +22,7 @@ export function LeadSimulator() {
       <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-xs font-medium text-ink-600">
           Nombre *
-          <input name="nombre" required defaultValue="Prueba Innova" className={inputClass} />
+          <input name="nombre" required defaultValue="Prueba Inova" className={inputClass} />
         </label>
         <label className="space-y-1 text-xs font-medium text-ink-600">
           Teléfono *

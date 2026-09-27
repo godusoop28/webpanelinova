@@ -42,7 +42,7 @@ export async function fetchPublicPage(rawUrl: string, allowedDomains: string[]):
       const response = await fetch(check.url, {
         redirect: "manual",
         signal: controller.signal,
-        headers: { accept: "text/html", "user-agent": "Century21InnovaAssistant/1.0 (+identificacion de propiedades)" },
+        headers: { accept: "text/html", "user-agent": "Century21InovaAssistant/1.0 (+identificacion de propiedades)" },
       });
 
       if (response.status >= 300 && response.status < 400) {

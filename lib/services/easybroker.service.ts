@@ -37,6 +37,8 @@ export interface EasyBrokerProperty {
   status?: string;
   show_prices?: boolean;
   features?: { name?: string }[];
+  /** Clave interna de la inmobiliaria (solo en el detalle; suele venir null). */
+  internal_id?: string | null;
 }
 
 /**
@@ -112,6 +114,40 @@ export async function listPublishedPropertiesPage(
   );
   return {
     content: (result.content ?? []).map(normalizeProperty),
+    total: result.pagination?.total ?? null,
+    hasNext: Boolean(result.pagination?.next_page),
+  };
+}
+
+export interface EasyBrokerPropertyIntegration {
+  integration_partner?: { name?: string; symbol?: string };
+  operation_type?: string;
+  remote_listing_id?: string | null;
+  listing_url?: string | null;
+  published?: boolean;
+  status?: string;
+}
+
+/**
+ * Anuncios de cada propiedad en portales (GET /property_integrations,
+ * documentado en dev.easybroker.com; verificado el 27-sep-2026 con la
+ * clave actual: Inmuebles24, Mercado Libre, Clasco, Pincali, ValoresAMPI…
+ * con remote_listing_id y/o listing_url). Solo lectura.
+ */
+export async function listPropertyIntegrationsPage(
+  page: number,
+  limit = 50
+): Promise<{ content: { public_id: string; integrations: EasyBrokerPropertyIntegration[] }[]; total: number | null; hasNext: boolean }> {
+  const result = await withRetry(
+    () =>
+      easyBrokerRequest<{
+        content?: { public_id: string; integrations?: EasyBrokerPropertyIntegration[] }[];
+        pagination?: { total?: number; next_page?: string | null };
+      }>({ path: "/property_integrations", query: { page, limit } }),
+    RETRY_OPTIONS
+  );
+  return {
+    content: (result.content ?? []).map((item) => ({ public_id: item.public_id, integrations: item.integrations ?? [] })),
     total: result.pagination?.total ?? null,
     hasNext: Boolean(result.pagination?.next_page),
   };

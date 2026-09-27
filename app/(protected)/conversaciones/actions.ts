@@ -113,6 +113,7 @@ const SettingsSchema = z.object({
   maxClarifications: z.coerce.number().int().min(1).max(6),
   abandonHandoffMinutes: z.coerce.number().int().min(0).max(24 * 60),
   existingLeadWindowDays: z.coerce.number().int().min(1).max(365),
+  handoffReopenMinutes: z.coerce.number().int().min(0).max(24 * 60),
   testSubscriberIds: z.string().default(""),
   managementSubscriberIds: z.string().default(""),
 });

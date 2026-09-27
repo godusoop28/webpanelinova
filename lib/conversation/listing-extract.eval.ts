@@ -43,7 +43,7 @@ describe("portales reales → inventario real", { timeout: 60_000 }, () => {
   for (const testCase of CASES) {
     it(testCase.note, async () => {
       const { extractListingInfo, slugKeywords, matchListingToCatalog } = await import("@/lib/conversation/listing-extract");
-      const response = await fetch(testCase.url, { headers: { "user-agent": "Century21InnovaAssistant/1.0 (+identificacion de propiedades)" } }).catch(() => null);
+      const response = await fetch(testCase.url, { headers: { "user-agent": "Century21InovaAssistant/1.0 (+identificacion de propiedades)" } }).catch(() => null);
       const html = response?.ok ? await response.text() : null;
       const info = html ? extractListingInfo(html) : { title: slugKeywords(testCase.url), description: null, price: null, currency: null, location: null, bedrooms: null, codes: [] };
       const { matches, confidence } = matchListingToCatalog(info, catalog);

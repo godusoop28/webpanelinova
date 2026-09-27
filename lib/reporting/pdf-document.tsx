@@ -2,6 +2,7 @@ import "server-only";
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { ReportData } from "@/lib/reporting/report-data";
 import { ROUTE_LABELS, toCanonicalRoute, type RawInterestType } from "@/lib/reporting/report-aggregation";
+import { BRAND_NAME } from "@/lib/brand";
 import { formatMexicoCityDateTime } from "@/lib/timezone";
 
 /**
@@ -254,7 +255,7 @@ export function ReportPdfDocument({
 
         <View style={styles.footer} fixed>
           <Text render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
-          <Text>Generado desde Panel Century 21 Innova</Text>
+          <Text>Generado desde Panel {BRAND_NAME}</Text>
         </View>
       </Page>
     </Document>

@@ -3,8 +3,8 @@ import { requireSection } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
 import { canConfigureAssistant } from "@/lib/permissions";
 import {
-  CONTROL_LABELS,
   HANDOFF_LABELS,
+  conversationStatus,
   countAttentionItems,
   listConversations,
   listOpenEscalations,
@@ -27,6 +27,7 @@ const FILTERS: { value: ConversationFilter; label: string }[] = [
   { value: "attention", label: "Requieren atención" },
   { value: "all", label: "Todas" },
   { value: "ai", label: "IA activa" },
+  { value: "waiting", label: "Esperando tras canalizar" },
   { value: "human", label: "Atención humana" },
   { value: "paused", label: "IA en pausa" },
   { value: "handed_off", label: "Canalizadas" },
@@ -100,7 +101,7 @@ export default async function ConversacionesPage({
                 <p className="text-2xl font-semibold text-ink-900">{counts.pendingEscalations}</p>
               </Card>
               <Card className="p-4">
-                <p className="text-xs text-ink-500">Contactos con IA detenida</p>
+                <p className="text-xs text-ink-500">Contactos con IA pausada por una persona</p>
                 <p className="text-2xl font-semibold text-ink-900">{counts.humanControl}</p>
               </Card>
               <Card className="p-4">
@@ -167,7 +168,7 @@ export default async function ConversacionesPage({
                       <th className="px-5 py-3 font-medium">Actividad</th>
                       <th className="px-5 py-3 font-medium">Contacto</th>
                       <th className="px-5 py-3 font-medium">Intención</th>
-                      <th className="px-5 py-3 font-medium">Control</th>
+                      <th className="px-5 py-3 font-medium">Estado</th>
                       <th className="px-5 py-3 font-medium">Canalización</th>
                       <th className="px-5 py-3 font-medium">Asesor</th>
                       <th className="px-5 py-3 font-medium">Último mensaje</th>
@@ -192,8 +193,11 @@ export default async function ConversacionesPage({
                         <td data-label="Intención" className="px-5 py-3 text-ink-600">
                           {INTENT_LABELS[conversation.primaryIntent as ConversationIntentCode]}
                         </td>
-                        <td data-label="Control" className="px-5 py-3">
-                          <Badge tone={conversation.control === "AI" ? "success" : "warning"}>{CONTROL_LABELS[conversation.control]}</Badge>
+                        <td data-label="Estado" className="px-5 py-3">
+                          {(() => {
+                            const status = conversationStatus(conversation);
+                            return <Badge tone={status.tone}>{status.label}</Badge>;
+                          })()}
                         </td>
                         <td data-label="Canalización" className="px-5 py-3 text-ink-600">
                           {HANDOFF_LABELS[conversation.handoffState]}

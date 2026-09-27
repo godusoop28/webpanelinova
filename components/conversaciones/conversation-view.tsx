@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { getConversationDetail } from "@/lib/services/conversation-admin.service";
-import { CONTROL_LABELS, HANDOFF_LABELS } from "@/lib/services/conversation-admin.service";
+import { HANDOFF_LABELS, conversationStatus } from "@/lib/services/conversation-admin.service";
 import { FACT_LABELS, INTENT_LABELS, type ConversationIntentCode, type Facts } from "@/lib/conversation/policy";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,6 +50,9 @@ export function MessageTimeline({ conversation }: { conversation: Detail }) {
               <div className={cn("mt-1.5 flex flex-wrap items-center gap-2 text-[11px]", inbound ? "text-ink-500" : "text-ink-300")}>
                 <span>#{message.seq}</span>
                 <span>{message.role === "USER" ? "Cliente" : message.role === "HUMAN_AGENT" ? "Persona del equipo" : "Asistente"}</span>
+                {message.seq === conversation.sessionStartSeq && conversation.sessionCount > 1 && <Badge tone="neutral">Inicio de sesión nueva</Badge>}
+                {(message.metadata as { duringWait?: boolean; waitNotice?: boolean } | null)?.duringWait && <Badge tone="gold">Durante la espera</Badge>}
+                {(message.metadata as { waitNotice?: boolean } | null)?.waitNotice && <Badge tone="gold">Aviso de espera</Badge>}
                 <span>{formatDateTime(message.createdAt)}</span>
                 {!inbound && status && <Badge tone={status.tone}>{status.label}</Badge>}
               </div>
@@ -98,7 +101,7 @@ export function ConversationStatePanel({ conversation }: { conversation: Detail 
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="flex flex-wrap gap-2">
-            <Badge tone={conversation.control === "AI" ? "success" : "warning"}>{CONTROL_LABELS[conversation.control]}</Badge>
+            <Badge tone={conversationStatus(conversation).tone}>{conversationStatus(conversation).label}</Badge>
             <Badge tone={conversation.handoffState === "ASSIGNED" || conversation.handoffState === "EXISTING_LEAD" ? "success" : conversation.handoffState === "FAILED" || conversation.handoffState === "NO_ADVISOR" ? "danger" : "neutral"}>
               {HANDOFF_LABELS[conversation.handoffState]}
             </Badge>
@@ -116,6 +119,16 @@ export function ConversationStatePanel({ conversation }: { conversation: Detail 
             <dd className="text-ink-800">{conversation.campaignRef ?? "—"}</dd>
             <dt className="text-ink-500">Última actividad</dt>
             <dd className="text-ink-800">{formatDateTime(conversation.lastActivityAt)}</dd>
+            <dt className="text-ink-500">Sesión actual</dt>
+            <dd className="text-ink-800">
+              #{conversation.sessionCount} desde {formatDateTime(conversation.sessionStartedAt ?? conversation.createdAt)}
+            </dd>
+            <dt className="text-ink-500">Espera tras canalizar</dt>
+            <dd className="text-ink-800">
+              {conversation.reopenAt ? `${conversation.reopenAt > new Date() ? "hasta" : "venció"} ${formatDateTime(conversation.reopenAt)}` : "—"}
+            </dd>
+            <dt className="text-ink-500">Asesor comunicado al cliente</dt>
+            <dd className="text-ink-800">{conversation.assignmentNoticeAt ? formatDateTime(conversation.assignmentNoticeAt) : "—"}</dd>
           </dl>
         </CardContent>
       </Card>

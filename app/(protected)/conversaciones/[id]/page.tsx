@@ -51,7 +51,8 @@ export default async function ConversationDetailPage({ params }: { params: Promi
               <div>
                 <CardTitle>Control de la IA</CardTitle>
                 <CardDescription>
-                  Si alguien responde desde la bandeja de ManyChat, detén la IA aquí: ManyChat no informa al sistema de esa toma.
+                  La espera tras canalizar vence sola. Una pausa hecha aquí NO vence: úsala si una persona atiende desde la bandeja de ManyChat (ManyChat no informa al
+                  sistema de esa toma).
                 </CardDescription>
               </div>
             </CardHeader>

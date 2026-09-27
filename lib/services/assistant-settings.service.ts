@@ -42,6 +42,7 @@ export interface AssistantSettingsUpdate {
   maxClarifications: number;
   abandonHandoffMinutes: number;
   existingLeadWindowDays: number;
+  handoffReopenMinutes: number;
   testSubscriberIds: string[];
   managementSubscriberIds: string[];
 }
