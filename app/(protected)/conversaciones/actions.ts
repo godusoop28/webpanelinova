@@ -141,7 +141,7 @@ export async function saveAssistantSettingsAction(_prev: ConversationActionState
   } catch (error) {
     return { error: errorMessage(error) };
   }
-  revalidatePath("/conversaciones");
+  revalidatePath("/conversaciones", "layout");
   return { success: "Configuración guardada." };
 }
 

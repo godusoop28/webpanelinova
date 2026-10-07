@@ -38,7 +38,7 @@ export default async function SimuladorPage({ searchParams }: { searchParams: Pr
                   {conversation ? (
                     <>
                       Envía varios mensajes seguidos para probar la agrupación.{" "}
-                      <Link href="/conversaciones/simulador" className="text-gold-700 hover:underline">
+                      <Link href="/conversaciones/simulador" className="text-accent-700 hover:underline">
                         Empezar otra
                       </Link>
                     </>

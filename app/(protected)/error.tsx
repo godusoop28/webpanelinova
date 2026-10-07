@@ -34,7 +34,7 @@ export default function ProtectedError({
       <button
         type="button"
         onClick={() => retry()}
-        className="rounded-lg bg-ink-900 px-4 py-2 text-xs font-medium text-white hover:bg-ink-800"
+        className="rounded-lg bg-accent-600 px-4 py-2 text-xs font-medium text-white hover:bg-accent-700"
       >
         Reintentar
       </button>

@@ -84,7 +84,7 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
               className={cn(
                 "rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
                 current === preset.value
-                  ? "bg-ink-900 text-white"
+                  ? "bg-accent-600 text-white"
                   : "text-ink-600 hover:bg-ink-100"
               )}
             >
@@ -134,7 +134,7 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
             type="button"
             onClick={applyCustomRange}
             disabled={isPending}
-            className="rounded-md bg-ink-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Aplicar
           </button>

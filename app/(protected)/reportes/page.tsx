@@ -119,7 +119,7 @@ export default async function ReportesPage({
             <div className="flex flex-wrap items-center gap-2">
               <a
                 href={`/api/reports/pdf?${pdfParams.toString()}`}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-ink-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-ink-800"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700"
               >
                 <Download className="size-3.5" aria-hidden />
                 Descargar PDF

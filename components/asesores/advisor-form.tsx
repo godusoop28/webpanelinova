@@ -10,7 +10,7 @@ import type { AdvisorFormState } from "@/app/(protected)/asesores/actions";
 const initialState: AdvisorFormState = {};
 
 const inputClass =
-  "w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400";
+  "w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400";
 
 export function AdvisorForm({
   advisor,

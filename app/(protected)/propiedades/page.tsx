@@ -132,7 +132,7 @@ export default async function PropiedadesPage({ searchParams }: { searchParams: 
                     {rows.map((row) => (
                       <tr key={row.publicId} className="border-b border-ink-50 last:border-0 hover:bg-surface-muted">
                         <td data-label="Propiedad" className="px-5 py-3">
-                          <Link href={`/propiedades/${row.publicId}?${exportParams.toString()}`} className="font-medium text-ink-900 hover:text-gold-700 hover:underline">
+                          <Link href={`/propiedades/${row.publicId}?${exportParams.toString()}`} className="font-medium text-ink-900 hover:text-accent-700 hover:underline">
                             {row.publicId}
                           </Link>
                           <p className="max-w-xs truncate text-xs text-ink-500">{row.title ?? "Sin datos en el índice"}</p>

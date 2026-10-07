@@ -119,7 +119,7 @@ export default async function PropertyDetailPage({
             {property?.publicUrl && (
               <>
                 {" · "}
-                <a href={property.publicUrl} target="_blank" rel="noreferrer" className="text-gold-700 hover:underline">
+                <a href={property.publicUrl} target="_blank" rel="noreferrer" className="text-accent-700 hover:underline">
                   Ficha pública
                 </a>
               </>
@@ -192,7 +192,7 @@ export default async function PropertyDetailPage({
                         <td className="py-2 pr-3 whitespace-nowrap text-ink-600">{inquiry.day}</td>
                         <td className="py-2 pr-3">
                           {canManage && inquiry.conversationId ? (
-                            <Link href={`/conversaciones/${inquiry.conversationId}`} className="text-gold-700 hover:underline">
+                            <Link href={`/conversaciones/${inquiry.conversationId}`} className="text-accent-700 hover:underline">
                               {maskContact(inquiry.contactKey)}
                             </Link>
                           ) : (
@@ -244,7 +244,7 @@ export default async function PropertyDetailPage({
                       {event.outcome && <p className="mt-1 text-xs text-ink-800">Registro: {event.outcome}</p>}
                       {canManage && (
                         <details className="mt-2">
-                          <summary className="cursor-pointer text-xs text-gold-700">Editar / cambiar estado</summary>
+                          <summary className="cursor-pointer text-xs text-accent-700">Editar / cambiar estado</summary>
                           <div className="pt-3">
                             <EventForm publicId={publicId} event={event} />
                           </div>
@@ -382,7 +382,7 @@ export default async function PropertyDetailPage({
                     <li key={listing.id} className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink-800">{PORTAL_LABELS[listing.portal] ?? listing.portalName}</span>
                       {listing.listingUrl ? (
-                        <a href={listing.listingUrl} target="_blank" rel="noreferrer" className="truncate text-gold-700 hover:underline">
+                        <a href={listing.listingUrl} target="_blank" rel="noreferrer" className="truncate text-accent-700 hover:underline">
                           {listing.externalKey}
                         </a>
                       ) : (

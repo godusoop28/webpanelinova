@@ -117,7 +117,7 @@ export default async function LeadsPage({
                       {formatDate(lead.fechaHora)}
                     </td>
                     <td data-label="Nombre" className="px-5 py-3 font-medium text-ink-900">
-                      <Link href={`/leads/${lead.id}`} className="hover:text-gold-700 hover:underline">
+                      <Link href={`/leads/${lead.id}`} className="hover:text-accent-700 hover:underline">
                         {lead.nombre || "—"}
                       </Link>
                     </td>
@@ -154,7 +154,7 @@ export default async function LeadsPage({
                           href={lead.linkWhatsappCliente}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-xs font-medium text-gold-700 hover:text-gold-600"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-accent-700 hover:text-accent-600"
                         >
                           <MessageCircle className="size-3.5" aria-hidden />
                           WhatsApp

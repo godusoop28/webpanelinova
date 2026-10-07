@@ -28,7 +28,7 @@ export default async function LoginPage({
     <div className="flex min-h-screen items-center justify-center bg-ink-950 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-ink-900 text-lg font-bold tracking-tight text-gold-400">
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-ink-900 text-lg font-bold tracking-tight text-c21-gold">
             C21
           </div>
           <div>
@@ -39,7 +39,7 @@ export default async function LoginPage({
 
         <div className="card p-6">
           <div className="mb-5 flex items-center gap-2 text-ink-700">
-            <ShieldCheck className="size-4 text-gold-600" aria-hidden />
+            <ShieldCheck className="size-4 text-accent-600" aria-hidden />
             <p className="text-xs">Acceso restringido a personal autorizado</p>
           </div>
 
@@ -73,18 +73,18 @@ export default async function LoginPage({
               required
               autoFocus
               placeholder="Correo"
-              className="w-full rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 shadow-sm outline-none transition-colors focus:border-gold-500"
+              className="w-full rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 shadow-sm outline-none transition-colors focus:border-accent-500"
             />
             <input
               type="password"
               name="password"
               required
               placeholder="Contraseña"
-              className="w-full rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 shadow-sm outline-none transition-colors focus:border-gold-500"
+              className="w-full rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 shadow-sm outline-none transition-colors focus:border-accent-500"
             />
             <button
               type="submit"
-              className="flex w-full items-center justify-center gap-3 rounded-lg bg-ink-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-ink-800"
+              className="flex w-full items-center justify-center gap-3 rounded-lg bg-accent-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-700"
             >
               Entrar
             </button>

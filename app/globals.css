@@ -1,35 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f6f3;
-  --foreground: #17140f;
+  --background: #f4f5f7;
+  --foreground: #111827;
 
-  /* Century 21 Inova brand palette */
-  --color-ink-950: #0d0d0c;
-  --color-ink-900: #17140f;
-  --color-ink-800: #262320;
-  --color-ink-700: #3a352f;
-  --color-ink-600: #514b43;
-  --color-ink-500: #6b6459;
-  --color-ink-400: #8b8378;
-  --color-ink-300: #b0a89a;
-  --color-ink-200: #d6cfc2;
-  --color-ink-100: #e9e4da;
-  --color-ink-50: #f4f1ea;
+  /* Neutros fríos (estilo ManyChat) */
+  --color-ink-950: #0b0f19;
+  --color-ink-900: #111827;
+  --color-ink-800: #1f2937;
+  --color-ink-700: #374151;
+  --color-ink-600: #4b5563;
+  --color-ink-500: #6b7280;
+  --color-ink-400: #9ca3af;
+  --color-ink-300: #c4c9d2;
+  --color-ink-200: #e2e5ea;
+  --color-ink-100: #eef0f3;
+  --color-ink-50: #f6f7f9;
 
-  --color-gold-700: #8a6d24;
-  --color-gold-600: #a5822c;
-  --color-gold-500: #c19a3c;
-  --color-gold-400: #d3b25f;
-  --color-gold-300: #e3ca8c;
-  --color-gold-100: #f4ead0;
+  /* Acento principal: azul tipo ManyChat */
+  --color-accent-700: #0a5fd1;
+  --color-accent-600: #0b6ff0;
+  --color-accent-500: #2b84ff;
+  --color-accent-400: #5ea2ff;
+  --color-accent-300: #9cc6ff;
+  --color-accent-100: #e6f0ff;
+  --color-accent-50: #f2f7ff;
+
+  /* Dorado Century 21: solo para la marca (logo) */
+  --color-c21-gold: #beaf87;
 
   --color-surface: #ffffff;
-  --color-surface-muted: #faf9f6;
-  --color-border: #e4dfd4;
+  --color-surface-muted: #f8f9fb;
+  --color-border: #e5e7eb;
 
-  --shadow-card: 0 1px 2px rgba(23, 20, 15, 0.04), 0 4px 16px rgba(23, 20, 15, 0.06);
-  --shadow-card-hover: 0 2px 4px rgba(23, 20, 15, 0.06), 0 8px 24px rgba(23, 20, 15, 0.08);
+  --shadow-card: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.06);
+  --shadow-card-hover: 0 4px 12px rgba(17, 24, 39, 0.08), 0 2px 4px rgba(17, 24, 39, 0.04);
 }
 
 @theme inline {
@@ -50,16 +55,21 @@
   --color-ink-900: var(--color-ink-900);
   --color-ink-950: var(--color-ink-950);
 
-  --color-gold-100: var(--color-gold-100);
-  --color-gold-300: var(--color-gold-300);
-  --color-gold-400: var(--color-gold-400);
-  --color-gold-500: var(--color-gold-500);
-  --color-gold-600: var(--color-gold-600);
-  --color-gold-700: var(--color-gold-700);
+  --color-accent-50: var(--color-accent-50);
+  --color-accent-100: var(--color-accent-100);
+  --color-accent-300: var(--color-accent-300);
+  --color-accent-400: var(--color-accent-400);
+  --color-accent-500: var(--color-accent-500);
+  --color-accent-600: var(--color-accent-600);
+  --color-accent-700: var(--color-accent-700);
+  --color-c21-gold: var(--color-c21-gold);
 
   --color-surface: var(--color-surface);
   --color-surface-muted: var(--color-surface-muted);
   --color-border: var(--color-border);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-card-hover: var(--shadow-card-hover);
 }
 
 * {
@@ -75,7 +85,7 @@ body {
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 0.875rem;
+  border-radius: 0.75rem;
   box-shadow: var(--shadow-card);
 }
 

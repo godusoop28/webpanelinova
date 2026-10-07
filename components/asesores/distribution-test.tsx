@@ -61,7 +61,7 @@ export function DistributionTest() {
               <span className="w-32 shrink-0 truncate text-ink-700">{result.nombre}</span>
               <div className="h-4 flex-1 overflow-hidden rounded bg-ink-100">
                 <div
-                  className="h-full rounded bg-gold-500"
+                  className="h-full rounded bg-accent-500"
                   style={{ width: maxCount > 0 ? `${(result.count / maxCount) * 100}%` : "0%" }}
                 />
               </div>

@@ -28,7 +28,7 @@ export function TableSearch({ placeholder }: { placeholder: string }) {
             router.replace(`${pathname}?${params.toString()}`);
           });
         }}
-        className="w-full rounded-lg border border-ink-200 bg-surface py-2 pl-9 pr-3 text-sm text-ink-800 placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-gold-400"
+        className="w-full rounded-lg border border-ink-200 bg-surface py-2 pl-9 pr-3 text-sm text-ink-800 placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
       />
     </div>
   );

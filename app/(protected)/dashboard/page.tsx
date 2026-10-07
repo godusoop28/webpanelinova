@@ -96,7 +96,7 @@ export default async function DashboardPage({
               <h2 className="text-sm font-semibold text-ink-900">Últimos leads</h2>
               <Link
                 href={reportHref}
-                className="inline-flex items-center gap-1 text-xs font-medium text-gold-700 hover:text-gold-600"
+                className="inline-flex items-center gap-1 text-xs font-medium text-accent-700 hover:text-accent-600"
               >
                 Ver reporte completo
                 <ArrowRight className="size-3.5" aria-hidden />

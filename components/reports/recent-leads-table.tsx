@@ -42,7 +42,7 @@ export function RecentLeadsTable({ leads }: { leads: LeadView[] }) {
                       {formatMexicoCityDateTime(new Date(lead.fechaHora))}
                     </td>
                     <td data-label="Cliente" className="px-5 py-3 font-medium text-ink-900">
-                      <Link href={`/leads/${lead.id}`} className="hover:text-gold-700 hover:underline">
+                      <Link href={`/leads/${lead.id}`} className="hover:text-accent-700 hover:underline">
                         {lead.nombre || "—"}
                       </Link>
                     </td>

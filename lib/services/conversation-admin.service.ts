@@ -1,6 +1,7 @@
 import "server-only";
 import type { ConversationControl, ConversationHandoffState, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { normalizePhoneE164 } from "@/lib/phone";
 
 /**
  * Lecturas y acciones del panel sobre conversaciones. Toda consulta va
@@ -10,6 +11,25 @@ import { prisma } from "@/lib/db";
 
 export type ConversationFilter = "all" | "attention" | "ai" | "waiting" | "human" | "paused" | "handed_off" | "errors" | "test";
 
+/**
+ * Contactos de WhatsApp que son asesores del equipo (por subscriber ID de
+ * ManyChat o por teléfono). Sus conversaciones con el bot se muestran en la
+ * pestaña "Asesores" y no se mezclan con las de clientes.
+ */
+function advisorContactKeys(advisors: { phone: string; manyChatSubscriberId: string | null }[]) {
+  return {
+    subscriberIds: advisors.map((advisor) => advisor.manyChatSubscriberId).filter((id): id is string => Boolean(id)),
+    phones: advisors.map((advisor) => normalizePhoneE164(advisor.phone)).filter(Boolean),
+  };
+}
+
+function advisorConversationWhere(keys: { subscriberIds: string[]; phones: string[] }): Prisma.ConversationWhereInput[] {
+  return [
+    ...(keys.subscriberIds.length > 0 ? [{ manyChatSubscriberId: { in: keys.subscriberIds } }] : []),
+    ...(keys.phones.length > 0 ? [{ phone: { in: keys.phones } }] : []),
+  ];
+}
+
 export async function listConversations(input: {
   companyId: string;
   filter: ConversationFilter;
@@ -18,6 +38,12 @@ export async function listConversations(input: {
   pageSize: number;
 }) {
   const where: Prisma.ConversationWhereInput = { companyId: input.companyId };
+  const and: Prisma.ConversationWhereInput[] = [];
+  const advisorKeys = advisorContactKeys(
+    await prisma.advisor.findMany({ where: { companyId: input.companyId }, select: { phone: true, manyChatSubscriberId: true } })
+  );
+  if (advisorKeys.subscriberIds.length > 0) and.push({ manyChatSubscriberId: { notIn: advisorKeys.subscriberIds } });
+  if (advisorKeys.phones.length > 0) and.push({ OR: [{ phone: null }, { phone: { notIn: advisorKeys.phones } }] });
   switch (input.filter) {
     case "attention":
       where.OR = [
@@ -57,16 +83,15 @@ export async function listConversations(input: {
   if (input.filter !== "test" && input.filter !== "all") where.isTest = false;
   if (input.search) {
     const search = input.search.trim();
-    where.AND = [
-      {
-        OR: [
-          { name: { contains: search, mode: "insensitive" } },
-          { phone: { contains: search.replace(/\s+/g, "") } },
-          { manyChatSubscriberId: search },
-        ],
-      },
-    ];
+    and.push({
+      OR: [
+        { name: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search.replace(/\s+/g, "") } },
+        { manyChatSubscriberId: search },
+      ],
+    });
   }
+  if (and.length > 0) where.AND = and;
 
   const [items, total] = await prisma.$transaction([
     prisma.conversation.findMany({
@@ -77,7 +102,7 @@ export async function listConversations(input: {
       include: {
         lead: { select: { id: true, assignedAdvisor: { select: { name: true } } } },
         _count: { select: { escalations: { where: { status: { not: "RESOLVED" } } } } },
-        messages: { orderBy: { seq: "desc" }, take: 1, select: { text: true, role: true } },
+        messages: { orderBy: { seq: "desc" }, take: 1, select: { text: true, role: true, createdAt: true } },
       },
     }),
     prisma.conversation.count({ where }),
@@ -92,6 +117,111 @@ export async function countAttentionItems(companyId: string) {
     prisma.conversationMessage.count({ where: { companyId, status: { in: ["FAILED", "UNCERTAIN"] }, createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } } }),
   ]);
   return { pendingEscalations, humanControl, deliveryIssues };
+}
+
+export function countOpenEscalations(companyId: string) {
+  return prisma.conversationEscalation.count({ where: { companyId, status: { not: "RESOLVED" } } });
+}
+
+/**
+ * Hilos con asesores: por cada asesor, los leads que se le canalizaron
+ * (avisos por WhatsApp) y, si escribe al número del bot, su conversación.
+ */
+export async function listAdvisorThreads(input: { companyId: string; search?: string }) {
+  const search = input.search?.trim();
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000);
+  const advisors = await prisma.advisor.findMany({
+    where: {
+      companyId: input.companyId,
+      ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { phone: { contains: search.replace(/\s+/g, "") } }] } : {}),
+    },
+    orderBy: { name: "asc" },
+    include: {
+      assignments: {
+        orderBy: { assignedAt: "desc" },
+        take: 1,
+        select: { assignedAt: true, manyChatNotified: true, lead: { select: { name: true } } },
+      },
+      _count: { select: { assignments: { where: { assignedAt: { gte: weekAgo } } } } },
+    },
+  });
+
+  const orConditions = advisorConversationWhere(advisorContactKeys(advisors));
+  const conversations =
+    orConditions.length > 0
+      ? await prisma.conversation.findMany({
+          where: { companyId: input.companyId, OR: orConditions },
+          select: {
+            id: true,
+            manyChatSubscriberId: true,
+            phone: true,
+            messages: { orderBy: { seq: "desc" }, take: 1, select: { text: true, role: true, createdAt: true } },
+          },
+        })
+      : [];
+
+  const threads = advisors.map((advisor) => {
+    const phone = normalizePhoneE164(advisor.phone);
+    const conversation = conversations.find(
+      (item) => (advisor.manyChatSubscriberId && item.manyChatSubscriberId === advisor.manyChatSubscriberId) || (phone && item.phone === phone)
+    );
+    const lastAssignment = advisor.assignments[0];
+    const lastMessage = conversation?.messages[0];
+    const assignmentAt = lastAssignment?.assignedAt ?? null;
+    const messageAt = lastMessage?.createdAt ?? null;
+    const showMessage = Boolean(lastMessage && messageAt && (!assignmentAt || messageAt > assignmentAt));
+    return {
+      advisor: { id: advisor.id, name: advisor.name, phone: advisor.phone, active: advisor.active, pausedUntil: advisor.pausedUntil },
+      conversationId: conversation?.id ?? null,
+      leadsThisWeek: advisor._count.assignments,
+      lastAt: showMessage ? messageAt : assignmentAt,
+      preview:
+        showMessage && lastMessage
+          ? { kind: "message" as const, text: lastMessage.text, role: lastMessage.role }
+          : lastAssignment
+            ? { kind: "lead" as const, text: `Nuevo lead: ${lastAssignment.lead.name}`, notified: lastAssignment.manyChatNotified }
+            : null,
+    };
+  });
+
+  return threads.sort((a, b) => {
+    if (a.advisor.active !== b.advisor.active) return a.advisor.active ? -1 : 1;
+    return (b.lastAt?.getTime() ?? 0) - (a.lastAt?.getTime() ?? 0);
+  });
+}
+
+export async function getAdvisorThread(companyId: string, advisorId: string) {
+  const advisor = await prisma.advisor.findFirst({ where: { id: advisorId, companyId } });
+  if (!advisor) return null;
+  const orConditions = advisorConversationWhere(advisorContactKeys([advisor]));
+  const [assignments, conversation] = await Promise.all([
+    prisma.leadAssignment.findMany({
+      where: { advisorId: advisor.id, lead: { companyId } },
+      orderBy: { assignedAt: "desc" },
+      take: 100,
+      include: {
+        lead: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            route: true,
+            origin: true,
+            propertyData: true,
+            conversations: { select: { id: true }, orderBy: { lastActivityAt: "desc" }, take: 1 },
+          },
+        },
+      },
+    }),
+    orConditions.length > 0
+      ? prisma.conversation.findFirst({
+          where: { companyId, OR: orConditions },
+          orderBy: { lastActivityAt: "desc" },
+          include: { messages: { orderBy: { seq: "desc" }, take: 300 } },
+        })
+      : Promise.resolve(null),
+  ]);
+  return { advisor, assignments, conversation };
 }
 
 export async function listOpenEscalations(companyId: string, limit = 50) {

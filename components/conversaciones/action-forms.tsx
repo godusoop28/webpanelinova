@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { Headset, Pause, Play, SendHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   recordHumanReplyAction,
@@ -20,7 +21,8 @@ function Feedback({ state }: { state: ConversationActionState }) {
   return null;
 }
 
-const inputClass = "w-full rounded-lg border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-800";
+const inputClass =
+  "w-full rounded-lg border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-800 placeholder:text-ink-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100";
 
 export function ControlForms({ conversationId, control }: { conversationId: string; control: "AI" | "HUMAN" | "PAUSED" }) {
   const [pauseState, pauseAction, pausePending] = useActionState(setControlAction.bind(null, conversationId), initial);
@@ -28,12 +30,13 @@ export function ControlForms({ conversationId, control }: { conversationId: stri
 
   if (control !== "AI") {
     return (
-      <form action={resumeAction} className="space-y-2">
+      <form action={resumeAction} className="space-y-2.5">
         <label className="flex items-start gap-2 text-xs text-ink-600">
-          <input type="checkbox" name="answerPending" className="mt-0.5" />
+          <input type="checkbox" name="answerPending" className="mt-0.5 accent-accent-600" />
           Responder ahora los mensajes que llegaron durante la pausa (si no, la IA contesta desde el próximo mensaje).
         </label>
-        <Button type="submit" size="sm" loading={resumePending}>
+        <Button type="submit" size="sm" loading={resumePending} className="w-full">
+          <Play className="size-3.5" aria-hidden />
           Reanudar IA
         </Button>
         <Feedback state={resumeState} />
@@ -48,7 +51,8 @@ export function ControlForms({ conversationId, control }: { conversationId: stri
         <option value="PAUSED">Solo pausar la IA</option>
       </select>
       <input name="reason" required placeholder="Motivo (p. ej. lo atiende gerencia)" className={inputClass} />
-      <Button type="submit" variant="secondary" size="sm" loading={pausePending}>
+      <Button type="submit" variant="secondary" size="sm" loading={pausePending} className="w-full">
+        <Pause className="size-3.5" aria-hidden />
         Detener IA para este contacto
       </Button>
       <Feedback state={pauseState} />
@@ -56,15 +60,31 @@ export function ControlForms({ conversationId, control }: { conversationId: stri
   );
 }
 
+/**
+ * Compositor al pie del chat. No envía WhatsApp: registra lo que una persona
+ * respondió desde la bandeja de ManyChat para que la IA lo tenga en memoria.
+ */
 export function HumanReplyForm({ conversationId }: { conversationId: string }) {
   const [state, action, pending] = useActionState(recordHumanReplyAction.bind(null, conversationId), initial);
   return (
-    <form action={action} className="space-y-2">
-      <textarea name="text" rows={2} placeholder="Lo que la persona del equipo respondió por la bandeja de ManyChat…" className={inputClass} />
-      <Button type="submit" variant="ghost" size="sm" loading={pending}>
-        Registrar respuesta humana
-      </Button>
-      <Feedback state={state} />
+    <form action={action} className="space-y-1.5">
+      <div className="flex items-end gap-2 rounded-2xl border border-ink-200 bg-surface p-1.5 pl-3 shadow-sm focus-within:border-accent-500 focus-within:ring-2 focus-within:ring-accent-100">
+        <Headset className="mb-2 size-4 shrink-0 text-ink-400" aria-hidden />
+        <textarea
+          name="text"
+          rows={1}
+          placeholder="Registrar lo que el equipo respondió desde ManyChat…"
+          className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm text-ink-800 placeholder:text-ink-400 focus:outline-none [field-sizing:content]"
+        />
+        <Button type="submit" size="sm" loading={pending} className="h-9 rounded-xl" aria-label="Registrar respuesta">
+          {!pending && <SendHorizontal className="size-4" aria-hidden />}
+          <span className="hidden sm:inline">Registrar</span>
+        </Button>
+      </div>
+      <div className="flex min-h-4 items-center justify-between gap-2 px-2">
+        <p className="text-[11px] text-ink-400">No se envía al cliente: queda en la memoria de la conversación.</p>
+        <Feedback state={state} />
+      </div>
     </form>
   );
 }

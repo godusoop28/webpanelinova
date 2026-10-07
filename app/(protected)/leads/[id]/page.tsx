@@ -58,7 +58,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               href={`https://wa.me/${digits}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-gold-700 hover:bg-surface-muted"
+              className="inline-flex items-center gap-1 rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-accent-700 hover:bg-surface-muted"
             >
               <MessageCircle className="size-3.5" aria-hidden />
               WhatsApp
