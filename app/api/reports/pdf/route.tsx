@@ -6,7 +6,8 @@ import { getReportData } from "@/lib/reporting/report-data";
 import { listLeadRows } from "@/lib/services/lead-view.service";
 import { ReportPdfDocument, type PdfLeadRow } from "@/lib/reporting/pdf-document";
 import { buildReportFilename } from "@/lib/reporting/report-filename";
-import { requireReportExportAccess, resolveExportDateRange, EXPORT_LEAD_CAP } from "@/lib/reporting/export";
+import { prisma } from "@/lib/db";
+import { requireReportExportAccess, resolveExportDateRange, resolveExportFilters, describeExportFilters, EXPORT_LEAD_CAP } from "@/lib/reporting/export";
 
 export async function GET(request: NextRequest) {
   const authError = await requireReportExportAccess();
@@ -15,13 +16,32 @@ export async function GET(request: NextRequest) {
   const resolved = resolveExportDateRange(request);
   if ("error" in resolved) return resolved.error;
   const { range } = resolved;
+  const filters = resolveExportFilters(request);
 
   try {
     const companyId = await getDefaultCompanyId();
-    const [report, leadsPage] = await Promise.all([
-      getReportData({ companyId, startDate: range.startDate, endDate: range.endDate }),
-      listLeadRows({ companyId, from: range.startDate, to: range.endDate }, 1, EXPORT_LEAD_CAP),
+    const [report, leadsPage, advisor] = await Promise.all([
+      getReportData({ companyId, startDate: range.startDate, endDate: range.endDate, filters: filters.report }),
+      listLeadRows(
+        {
+          companyId,
+          from: range.startDate,
+          to: range.endDate,
+          interestType: filters.report.interestTypes,
+          origin: filters.report.origin,
+          advisorId: filters.report.advisorId,
+          status: filters.status,
+          search: filters.search,
+        },
+        1,
+        EXPORT_LEAD_CAP
+      ),
+      filters.report.advisorId
+        ? prisma.advisor.findFirst({ where: { id: filters.report.advisorId, companyId }, select: { name: true } })
+        : Promise.resolve(null),
     ]);
+    const filterParts = describeExportFilters(filters, advisor?.name);
+    const periodLabel = filterParts.length > 0 ? `${range.label} · ${filterParts.join(" · ")}` : range.label;
 
     const leads: PdfLeadRow[] = leadsPage.leads.map((lead) => ({
       fechaHora: lead.fechaHora,
@@ -37,7 +57,7 @@ export async function GET(request: NextRequest) {
       <ReportPdfDocument
         companyName={DEFAULT_COMPANY_NAME}
         report={report}
-        periodLabel={range.label}
+        periodLabel={periodLabel}
         generatedAt={new Date()}
         leads={leads}
         leadsTotal={leadsPage.total}

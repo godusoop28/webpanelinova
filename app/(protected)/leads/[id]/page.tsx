@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, MessageCircle } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
 import { getLeadDetail } from "@/lib/services/lead-view.service";
@@ -40,14 +39,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="space-y-5">
-      <Link href="/leads" className="inline-flex items-center gap-1.5 text-sm text-ink-500 hover:text-ink-800">
-        <ArrowLeft className="size-3.5" aria-hidden />
-        Volver a leads
-      </Link>
-
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ink-900">{lead.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-950 sm:text-[28px] sm:leading-9">{lead.name}</h1>
           <p className="text-sm text-ink-500">{lead.phone}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">

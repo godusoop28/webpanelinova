@@ -84,7 +84,7 @@ export default async function LoginPage({
             />
             <button
               type="submit"
-              className="flex w-full items-center justify-center gap-3 rounded-lg bg-accent-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-700"
+              className="flex w-full items-center justify-center gap-3 rounded-lg bg-accent-500 px-4 py-3 text-sm font-semibold text-ink-950 shadow-sm transition-colors hover:bg-accent-400"
             >
               Entrar
             </button>

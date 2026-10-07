@@ -12,3 +12,7 @@ export const LEAD_STATUS_LABELS: Record<string, string> = {
 export function leadStatusLabel(status: string): string {
   return LEAD_STATUS_LABELS[status] ?? status;
 }
+
+/** Valor del filtro agrupado de pendientes (estados distintos de Completado y Con error). */
+export const PENDING_STATUS_FILTER = "pending";
+export const PENDING_STATUS_FILTER_LABEL = "Pendientes (sin completar)";

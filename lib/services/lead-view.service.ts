@@ -3,6 +3,7 @@ import type { Lead, LeadAssignment, AuditLog, AssignmentMethod } from "@prisma/c
 import type { LeadView } from "@/lib/types";
 import { findLeadsPaginated, findLeadById, type LeadFilters } from "@/lib/repositories/lead.repository";
 import { leadStatusLabel } from "@/lib/lead-status";
+import { prisma } from "@/lib/db";
 
 export { LEAD_STATUS_LABELS, leadStatusLabel } from "@/lib/lead-status";
 
@@ -35,6 +36,9 @@ function dbLeadToView(lead: LeadWithRelations): LeadView {
     manyChatNotificado: latest?.manyChatNotified ?? false,
     easyBrokerConfirmado: latest?.easyBrokerConfirmed ?? false,
     error: lead.auditLogs[0]?.message ?? "",
+    assignmentStatus: lead.assignmentStatus,
+    propiedadId: lead.easyBrokerPropertyId ?? "",
+    tieneAsignacion: Boolean(latest),
   };
 }
 
@@ -53,6 +57,38 @@ export async function listLeadRows(filters: LeadFilters, page: number, limit: nu
     page: result.page,
     limit: result.limit,
   };
+}
+
+/** Conteos globales para las tarjetas de Leads (misma definición de "pendiente" que los reportes). */
+export async function leadStatusCounts(companyId: string) {
+  const [groups, assigned] = await Promise.all([
+    prisma.lead.groupBy({ by: ["status"], where: { companyId }, _count: { _all: true } }),
+    prisma.lead.count({ where: { companyId, assignedAdvisorId: { not: null } } }),
+  ]);
+  const total = groups.reduce((sum, g) => sum + g._count._all, 0);
+  const failed = groups.find((g) => g.status === "FAILED")?._count._all ?? 0;
+  const pending = groups.filter((g) => g.status !== "COMPLETED" && g.status !== "FAILED").reduce((sum, g) => sum + g._count._all, 0);
+  return { total, pending, assigned, failed };
+}
+
+/** Opciones reales para los filtros de Leads. */
+export async function leadFilterOptions(companyId: string) {
+  const [origins, advisors] = await Promise.all([
+    prisma.lead.groupBy({ by: ["origin"], where: { companyId, origin: { not: null } }, _count: { _all: true }, orderBy: { _count: { origin: "desc" } } }),
+    prisma.advisor.findMany({ where: { companyId }, select: { id: true, name: true, active: true }, orderBy: { name: "asc" } }),
+  ]);
+  return {
+    origins: origins.map((o) => o.origin?.trim()).filter((o): o is string => Boolean(o)),
+    advisors,
+  };
+}
+
+/** Títulos del índice local de EasyBroker para mostrar el nombre de la propiedad junto a su código. */
+export async function propertyTitles(companyId: string, publicIds: string[]) {
+  const ids = [...new Set(publicIds.filter(Boolean))];
+  if (ids.length === 0) return new Map<string, string>();
+  const rows = await prisma.propertyCacheEntry.findMany({ where: { companyId, publicId: { in: ids } }, select: { publicId: true, title: true } });
+  return new Map(rows.map((row) => [row.publicId, row.title]));
 }
 
 export interface LeadDetail {

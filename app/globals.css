@@ -1,40 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f5f7;
-  --foreground: #111827;
+  --background: #f7f6f2;
+  --foreground: #1c1e1a;
 
-  /* Neutros fríos (estilo ManyChat) */
-  --color-ink-950: #0b0f19;
-  --color-ink-900: #111827;
-  --color-ink-800: #1f2937;
-  --color-ink-700: #374151;
-  --color-ink-600: #4b5563;
-  --color-ink-500: #6b7280;
-  --color-ink-400: #9ca3af;
-  --color-ink-300: #c4c9d2;
-  --color-ink-200: #e2e5ea;
-  --color-ink-100: #eef0f3;
-  --color-ink-50: #f6f7f9;
+  /* Neutros cálidos (marfil / carbón) */
+  --color-ink-950: #151713;
+  --color-ink-900: #1c1e1a;
+  --color-ink-800: #2b2d28;
+  --color-ink-700: #41433d;
+  --color-ink-600: #575951;
+  --color-ink-500: #6f7168;
+  --color-ink-400: #94958b;
+  --color-ink-300: #c1c0b5;
+  --color-ink-200: #e2e0d7;
+  --color-ink-100: #eeece5;
+  --color-ink-50: #f5f4ef;
 
-  /* Acento principal: azul tipo ManyChat */
-  --color-accent-700: #0a5fd1;
-  --color-accent-600: #0b6ff0;
-  --color-accent-500: #2b84ff;
-  --color-accent-400: #5ea2ff;
-  --color-accent-300: #9cc6ff;
-  --color-accent-100: #e6f0ff;
-  --color-accent-50: #f2f7ff;
+  /* Acento dorado CENTURY 21. Texto sobre dorado: siempre oscuro (ink-950). Texto dorado sobre blanco: accent-700 o más oscuro. */
+  --color-accent-50: #faf8f1;
+  --color-accent-100: #f3eddc;
+  --color-accent-200: #e7dcbc;
+  --color-accent-300: #d6c79c;
+  --color-accent-400: #c6b585;
+  --color-accent-500: #b5a477;
+  --color-accent-600: #9a8956;
+  --color-accent-700: #74663a;
+  --color-accent-800: #594e2c;
 
-  /* Dorado Century 21: solo para la marca (logo) */
+  /* Sidebar carbón */
+  --color-sidebar: #222521;
+  --color-sidebar-hover: #2d302b;
+  --color-sidebar-border: #34372f;
+
   --color-c21-gold: #beaf87;
 
   --color-surface: #ffffff;
-  --color-surface-muted: #f8f9fb;
-  --color-border: #e5e7eb;
+  --color-surface-muted: #faf9f6;
+  --color-border: #e6e3da;
 
-  --shadow-card: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 3px rgba(17, 24, 39, 0.06);
-  --shadow-card-hover: 0 4px 12px rgba(17, 24, 39, 0.08), 0 2px 4px rgba(17, 24, 39, 0.04);
+  --shadow-card: 0 1px 2px rgba(28, 30, 26, 0.04), 0 1px 3px rgba(28, 30, 26, 0.05);
+  --shadow-card-hover: 0 8px 24px rgba(28, 30, 26, 0.1), 0 2px 6px rgba(28, 30, 26, 0.05);
 }
 
 @theme inline {
@@ -57,11 +63,17 @@
 
   --color-accent-50: var(--color-accent-50);
   --color-accent-100: var(--color-accent-100);
+  --color-accent-200: var(--color-accent-200);
   --color-accent-300: var(--color-accent-300);
   --color-accent-400: var(--color-accent-400);
   --color-accent-500: var(--color-accent-500);
   --color-accent-600: var(--color-accent-600);
   --color-accent-700: var(--color-accent-700);
+  --color-accent-800: var(--color-accent-800);
+
+  --color-sidebar: var(--color-sidebar);
+  --color-sidebar-hover: var(--color-sidebar-hover);
+  --color-sidebar-border: var(--color-sidebar-border);
   --color-c21-gold: var(--color-c21-gold);
 
   --color-surface: var(--color-surface);
@@ -91,6 +103,33 @@ body {
 
 .scrollbar-thin {
   scrollbar-width: thin;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 2px;
+}
+
+/* Tablas de datos: encabezado suave y filas con separador fino. */
+.data-table thead th {
+  background: var(--color-surface-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-500);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /*

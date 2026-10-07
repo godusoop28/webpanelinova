@@ -7,7 +7,7 @@ import { buildReportFilename } from "@/lib/reporting/report-filename";
 import { toCanonicalRoute, ROUTE_LABELS } from "@/lib/reporting/report-aggregation";
 import type { RawInterestType } from "@/lib/reporting/report-aggregation";
 import { formatMexicoCityDateTime } from "@/lib/timezone";
-import { requireReportExportAccess, resolveExportDateRange, EXPORT_LEAD_CAP } from "@/lib/reporting/export";
+import { requireReportExportAccess, resolveExportDateRange, resolveExportFilters, EXPORT_LEAD_CAP } from "@/lib/reporting/export";
 
 const HEADER = ["Fecha", "Cliente", "Teléfono", "Ruta", "Origen", "Asesor", "Estado", "EasyBroker", "ManyChat"];
 
@@ -18,11 +18,21 @@ export async function GET(request: NextRequest) {
   const resolved = resolveExportDateRange(request);
   if ("error" in resolved) return resolved.error;
   const { range } = resolved;
+  const filters = resolveExportFilters(request);
 
   try {
     const companyId = await getDefaultCompanyId();
     const leadsPage = await listLeadRows(
-      { companyId, from: range.startDate, to: range.endDate },
+      {
+        companyId,
+        from: range.startDate,
+        to: range.endDate,
+        interestType: filters.report.interestTypes,
+        origin: filters.report.origin,
+        advisorId: filters.report.advisorId,
+        status: filters.status,
+        search: filters.search,
+      },
       1,
       EXPORT_LEAD_CAP
     );

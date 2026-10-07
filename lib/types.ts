@@ -40,4 +40,10 @@ export interface LeadView {
   easyBrokerConfirmado: boolean;
   /** Mensaje del AuditLog de error más reciente, o "" si el lead no falló. */
   error: string;
+  /** Estado de asignación del lead (PENDING/ASSIGNED/CONFIRMED/FAILED), distinto del estado del proceso y de EasyBroker. */
+  assignmentStatus: string;
+  /** ID público de EasyBroker de la propiedad, si se identificó. */
+  propiedadId: string;
+  /** Hay un registro de asignación (sin él, "EasyBroker/aviso pendiente" no aplica). */
+  tieneAsignacion: boolean;
 }

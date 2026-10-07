@@ -1,4 +1,5 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { leadStatusLabel } from "@/lib/lead-status";
 import { aggregateReportData, type AggregatedReportData } from "@/lib/reporting/report-aggregation";
@@ -20,6 +21,14 @@ export interface ReportDataParams {
   companyId: string;
   startDate: Date;
   endDate: Date;
+  /** Filtros opcionales de Reportes (ruta/origen/asesor). Mismas reglas que el detalle de leads (lib/repositories/lead.repository.ts). */
+  filters?: ReportFilters;
+}
+
+export interface ReportFilters {
+  interestTypes?: string[];
+  origin?: string;
+  advisorId?: string;
 }
 
 export interface ReportData extends AggregatedReportData {
@@ -40,8 +49,11 @@ export interface ReportData extends AggregatedReportData {
  * "today". The reduction itself lives in report-aggregation.ts, pure and
  * unit-tested without a database.
  */
-export async function getReportData({ companyId, startDate, endDate }: ReportDataParams): Promise<ReportData> {
-  const where = { companyId, createdAt: { gte: startDate, lte: endDate } };
+export async function getReportData({ companyId, startDate, endDate, filters }: ReportDataParams): Promise<ReportData> {
+  const where: Prisma.LeadWhereInput = { companyId, createdAt: { gte: startDate, lte: endDate } };
+  if (filters?.interestTypes?.length) where.interestType = { in: filters.interestTypes as Prisma.EnumLeadInterestTypeFilter["in"] };
+  if (filters?.origin) where.origin = { contains: filters.origin, mode: "insensitive" };
+  if (filters?.advisorId) where.assignedAdvisorId = filters.advisorId;
 
   const [
     total,
@@ -61,7 +73,7 @@ export async function getReportData({ companyId, startDate, endDate }: ReportDat
     prisma.advisor.findMany({ where: { companyId }, select: { id: true, name: true } }),
     prisma.leadAssignment.groupBy({
       by: ["advisorId", "method"],
-      where: { lead: { companyId, createdAt: { gte: startDate, lte: endDate } } },
+      where: { lead: where },
       _count: { _all: true },
     }),
     prisma.lead.findMany({ where, distinct: ["phone"], select: { phone: true } }),

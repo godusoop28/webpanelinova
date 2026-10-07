@@ -125,6 +125,9 @@ export interface PropertyReportRow extends PropertyMetrics {
   title: string | null;
   published: boolean | null;
   publicUrl: string | null;
+  propertyType: string | null;
+  location: string | null;
+  bedrooms: number | null;
   periodEvents: number;
   recipients: number;
   lastActivityAt: Date | null;
@@ -135,7 +138,7 @@ export async function listPropertyReport(input: { companyId: string; startKey: s
   const metrics = aggregatePropertyInquiries(rows, input.startKey, input.endKey);
   const ids = metrics.map((m) => m.publicId);
   const [cache, events, recipients] = await Promise.all([
-    prisma.propertyCacheEntry.findMany({ where: { companyId: input.companyId, publicId: { in: ids } }, select: { publicId: true, title: true, published: true, publicUrl: true } }),
+    prisma.propertyCacheEntry.findMany({ where: { companyId: input.companyId, publicId: { in: ids } }, select: { publicId: true, title: true, published: true, publicUrl: true, propertyType: true, location: true, bedrooms: true } }),
     prisma.propertyEvent.groupBy({
       by: ["publicId"],
       where: { companyId: input.companyId, publicId: { in: ids }, OR: [{ scheduledAt: { gte: dayStart(input.startKey), lt: dayAfter(input.endKey) } }, { completedAt: { gte: dayStart(input.startKey), lt: dayAfter(input.endKey) } }] },
@@ -158,6 +161,9 @@ export async function listPropertyReport(input: { companyId: string; startKey: s
         title: c?.title ?? null,
         published: c?.published ?? null,
         publicUrl: c?.publicUrl ?? null,
+        propertyType: c?.propertyType ?? null,
+        location: c?.location ?? null,
+        bedrooms: c?.bedrooms ?? null,
         periodEvents: e?._count._all ?? 0,
         recipients: recipientsById.get(m.publicId) ?? 0,
         lastActivityAt: [m.lastInquiryAt, eventUpdated].filter((d): d is Date => Boolean(d)).sort((a, b) => b.getTime() - a.getTime())[0] ?? null,

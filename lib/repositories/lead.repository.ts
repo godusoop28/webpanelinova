@@ -1,6 +1,7 @@
 import "server-only";
 import type { Lead, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { PENDING_STATUS_FILTER } from "@/lib/lead-status";
 
 export interface LeadFilters {
   companyId: string;
@@ -22,7 +23,8 @@ export interface PaginatedLeads {
 
 function buildWhere(filters: LeadFilters): Prisma.LeadWhereInput {
   const where: Prisma.LeadWhereInput = { companyId: filters.companyId };
-  if (filters.status) where.status = filters.status as Prisma.EnumLeadStatusFilter["equals"];
+  if (filters.status === PENDING_STATUS_FILTER) where.status = { notIn: ["COMPLETED", "FAILED"] };
+  else if (filters.status) where.status = filters.status as Prisma.EnumLeadStatusFilter["equals"];
   if (filters.advisorId) where.assignedAdvisorId = filters.advisorId;
   if (filters.interestType) {
     where.interestType = Array.isArray(filters.interestType)

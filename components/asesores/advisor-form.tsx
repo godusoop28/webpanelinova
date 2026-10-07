@@ -3,14 +3,16 @@
 import { useActionState, useEffect } from "react";
 import { UserPlus, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Field, FormMessage, inputClass, selectClass } from "@/components/ui/field";
 import { ADVISOR_PRIORITY_OPTIONS, LEAD_ROUTES } from "@/lib/advisors";
 import type { AdvisorView } from "@/lib/types";
 import type { AdvisorFormState } from "@/app/(protected)/asesores/actions";
 
 const initialState: AdvisorFormState = {};
 
-const inputClass =
-  "w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400";
+export function routeLabel(route: string): string {
+  return route === "Timeout" ? "Sin respuesta" : route;
+}
 
 export function AdvisorForm({
   advisor,
@@ -40,94 +42,64 @@ export function AdvisorForm({
 
   return (
     <form action={formAction} className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-xs font-medium text-ink-600">
-          Nombre *
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Nombre" required className="sm:col-span-2">
           <input name="nombre" required defaultValue={advisor?.nombre} className={inputClass} />
-        </label>
-        <label className="space-y-1 text-xs font-medium text-ink-600">
-          WhatsApp *
-          <input name="whatsapp" required defaultValue={advisor?.whatsapp} placeholder="5219981112233" className={inputClass} />
-        </label>
-        <label className="space-y-1 text-xs font-medium text-ink-600">
-          Email EasyBroker
-          <input
-            name="emailEasyBroker"
-            type="email"
-            defaultValue={advisor?.emailEasyBroker}
-            placeholder="correo@c21inova.com"
-            className={inputClass}
-          />
-        </label>
-        <label className="space-y-1 text-xs font-medium text-ink-600">
-          ManyChat ID
+        </Field>
+        <Field label="WhatsApp" required hint="Con lada, p. ej. 5219981112233">
+          <input name="whatsapp" required inputMode="tel" defaultValue={advisor?.whatsapp} placeholder="5219981112233" className={inputClass} />
+        </Field>
+        <Field label="ManyChat ID" hint="Necesario para recibir avisos por WhatsApp.">
           <input name="manyChatId" defaultValue={advisor?.manyChatId} className={inputClass} />
-        </label>
-        <label className="space-y-1 text-xs font-medium text-ink-600">
-          Prioridad
-          <select name="peso" defaultValue={advisor?.peso ?? 5} className={inputClass}>
+        </Field>
+        <Field label="Email de EasyBroker" className="sm:col-span-2">
+          <input name="emailEasyBroker" type="email" defaultValue={advisor?.emailEasyBroker} placeholder="correo@c21inova.com" className={inputClass} />
+        </Field>
+        <Field label="Prioridad" hint="Peso en la ruleta ponderada.">
+          <select name="peso" defaultValue={advisor?.peso ?? 5} className={selectClass}>
             {priorityOptions.map((option) => (
               <option key={option.weight} value={option.weight}>
                 {option.label}
               </option>
             ))}
           </select>
-        </label>
-        <label className="space-y-1 text-xs font-medium text-ink-600">
-          Límite diario
-          <input
-            name="limiteDiario"
-            type="number"
-            min={1}
-            step={1}
-            defaultValue={advisor?.limiteDiario ?? ""}
-            placeholder="Sin límite"
-            className={inputClass}
-          />
-        </label>
+        </Field>
+        <Field label="Límite diario" hint="Vacío = sin límite.">
+          <input name="limiteDiario" type="number" min={1} step={1} defaultValue={advisor?.limiteDiario ?? ""} placeholder="Sin límite" className={inputClass} />
+        </Field>
       </div>
 
-      <fieldset className="space-y-1.5">
-        <legend className="text-xs font-medium text-ink-600">
-          Rutas permitidas (ninguna seleccionada = todas)
-        </legend>
-        <div className="flex flex-wrap gap-3">
+      <fieldset className="space-y-2">
+        <legend className="text-xs font-medium text-ink-700">Rutas permitidas</legend>
+        <p className="text-[11px] text-ink-500">Si no marcas ninguna, el asesor participa en todas las rutas.</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {LEAD_ROUTES.map((route) => (
-            <label key={route} className="flex items-center gap-1.5 text-xs text-ink-700">
+            <label key={route} className="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-700 has-[:checked]:border-accent-500 has-[:checked]:bg-accent-50">
               <input
                 type="checkbox"
                 name="rutasPermitidas"
                 value={route}
                 defaultChecked={advisor?.rutasPermitidas.includes(route) ?? false}
-                className="size-4 rounded border-ink-300"
+                className="size-4 rounded border-ink-300 accent-[var(--color-accent-600)]"
               />
-              {route === "Timeout" ? "Sin respuesta" : route}
+              {routeLabel(route)}
             </label>
           ))}
         </div>
       </fieldset>
 
-      <label className="block space-y-1 text-xs font-medium text-ink-600">
-        Observaciones
-        <textarea
-          name="observaciones"
-          defaultValue={advisor?.observaciones}
-          rows={2}
-          className={inputClass}
-        />
+      <Field label="Observaciones">
+        <textarea name="observaciones" defaultValue={advisor?.observaciones} rows={3} className={inputClass} />
+      </Field>
+
+      <label className="flex items-center gap-2.5 text-sm text-ink-700">
+        <input type="checkbox" name="activo" defaultChecked={advisor?.activo ?? true} className="size-4 rounded border-ink-300 accent-[var(--color-accent-600)]" />
+        Activo (participa en la distribución)
       </label>
 
-      <label className="flex items-center gap-2 text-sm text-ink-600">
-        <input
-          type="checkbox"
-          name="activo"
-          defaultChecked={advisor?.activo ?? true}
-          className="size-4 rounded border-ink-300"
-        />
-        Activo
-      </label>
+      <FormMessage error={state.error} />
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 pt-4">
         <Button type="submit" loading={pending}>
           {advisor ? <Save className="size-4" aria-hidden /> : <UserPlus className="size-4" aria-hidden />}
           {submitLabel ?? (advisor ? "Guardar cambios" : "Agregar asesor")}
@@ -138,8 +110,6 @@ export function AdvisorForm({
           </Button>
         )}
       </div>
-
-      {state.error && <p className="text-xs text-rose-600">{state.error}</p>}
     </form>
   );
 }

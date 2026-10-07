@@ -102,6 +102,7 @@ export async function listConversations(input: {
       include: {
         lead: { select: { id: true, assignedAdvisor: { select: { name: true } } } },
         _count: { select: { escalations: { where: { status: { not: "RESOLVED" } } } } },
+        escalations: { where: { status: { not: "RESOLVED" } }, orderBy: { createdAt: "desc" }, take: 3, select: { type: true, status: true } },
         messages: { orderBy: { seq: "desc" }, take: 1, select: { text: true, role: true, createdAt: true } },
       },
     }),

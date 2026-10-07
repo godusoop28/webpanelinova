@@ -108,10 +108,7 @@ export default async function PropertyDetailPage({
     <div className="space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <Link href="/propiedades" className="text-xs text-ink-500 hover:underline">
-            ← Propiedades
-          </Link>
-          <h1 className="text-xl font-semibold text-ink-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-950 sm:text-[28px] sm:leading-9">
             {publicId} {property?.title ? `· ${property.title}` : ""}
           </h1>
           <p className="text-sm text-ink-500">

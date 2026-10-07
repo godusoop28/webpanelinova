@@ -1,10 +1,12 @@
+import { ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
 import { listUsers } from "@/lib/services/user.service";
-import { Card } from "@/components/ui/card";
-import { EmptyState, ErrorState } from "@/components/ui/state";
-import { NewUserForm } from "@/components/usuarios/new-user-form";
-import { UserRow } from "@/components/usuarios/user-row";
+import { Card, SectionHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { ErrorState } from "@/components/ui/state";
+import { UsersBoard } from "@/components/usuarios/users-board";
+import { RolesOverview } from "@/components/roles-overview";
 
 export default async function UsuariosPage() {
   const currentUser = await requireRole("ADMIN");
@@ -20,43 +22,26 @@ export default async function UsuariosPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-ink-900">Usuarios</h1>
-        <p className="text-sm text-ink-500">Controla quién puede iniciar sesión en el panel y con qué rol.</p>
-      </div>
+      <PageHeader title="Usuarios" description="Administra quién puede iniciar sesión en el panel y con qué rol." />
 
-      <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold text-ink-900">Agregar usuario</h2>
-        <NewUserForm />
-      </Card>
+      {loadError ? (
+        <ErrorState title="No se pudieron cargar los usuarios" description={loadError} />
+      ) : (
+        <UsersBoard
+          currentUserId={currentUser.id}
+          users={users.map((user) => ({ id: user.id, name: user.name, email: user.email, role: user.role, active: user.active }))}
+        />
+      )}
 
       <Card>
-        {loadError ? (
-          <div className="p-5">
-            <ErrorState title="No se pudieron cargar los usuarios" description={loadError} />
-          </div>
-        ) : users.length === 0 ? (
-          <div className="p-5">
-            <EmptyState title="Sin usuarios registrados" />
-          </div>
-        ) : (
-          <div className="md:overflow-x-auto">
-            <table className="responsive-table w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
-                  <th className="px-5 py-3 font-medium">Usuario</th>
-                  <th className="px-5 py-3 font-medium">Estado</th>
-                  <th className="px-5 py-3 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <UserRow key={user.id} user={user} isSelf={user.id === currentUser.id} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <SectionHeader
+          icon={ShieldCheck}
+          title="Roles del sistema"
+          description="Debe quedar al menos un ADMIN activo; nadie puede desactivar ni eliminar su propia cuenta."
+        />
+        <div className="px-5 pb-5">
+          <RolesOverview />
+        </div>
       </Card>
     </div>
   );

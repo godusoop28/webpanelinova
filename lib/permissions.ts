@@ -64,6 +64,11 @@ export function canEditAdvisors(role: Role | undefined): boolean {
   return role === "ADMIN" || role === "DIRECCION";
 }
 
+/** Secciones a las que entra cada rol (fuente única para el menú y la pantalla de Configuración). */
+export function sectionsForRole(role: Role): PanelSection[] {
+  return (Object.keys(SECTION_ACCESS) as PanelSection[]).filter((section) => SECTION_ACCESS[section].includes(role));
+}
+
 export const ALL_SECTIONS: { section: PanelSection; label: string; href: string }[] = [
   { section: "dashboard", label: "Resumen", href: "/dashboard" },
   { section: "leads", label: "Leads", href: "/leads" },
@@ -73,6 +78,6 @@ export const ALL_SECTIONS: { section: PanelSection; label: string; href: string 
   { section: "propiedades", label: "Propiedades", href: "/propiedades" },
   { section: "usuarios", label: "Usuarios", href: "/usuarios" },
   { section: "integraciones", label: "Integraciones", href: "/integraciones" },
-  { section: "testing", label: "Diagnóstico interno", href: "/testing" },
   { section: "configuracion", label: "Configuración", href: "/configuracion" },
+  { section: "testing", label: "Diagnóstico interno", href: "/testing" },
 ];

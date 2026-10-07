@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
 import { isWeeklyDue, weeklyPeriodFor } from "@/lib/reporting/property-report";
@@ -19,10 +18,7 @@ export default async function PropertyReportSettingsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <Link href="/propiedades" className="text-xs text-ink-500 hover:underline">
-          ← Propiedades
-        </Link>
-        <h1 className="text-xl font-semibold text-ink-900">Reporte de los viernes y avisos a propietarios</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink-950 sm:text-[28px] sm:leading-9">Reporte de los viernes y avisos a propietarios</h1>
         <p className="text-sm text-ink-500">
           Solo ADMIN. Todo inicia apagado. Periodo que se reportaría hoy: {period.label} (viernes a jueves, Ciudad de México).
         </p>

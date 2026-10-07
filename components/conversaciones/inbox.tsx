@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Bot, FlaskConical, Headset, MessagesSquare, SlidersHorizontal, UserSquare2, Users } from "lucide-react";
+import { AlertTriangle, BotOff, FlaskConical, MessageSquareWarning, MessagesSquare, SlidersHorizontal, UserSquare2 } from "lucide-react";
 import { getDefaultCompanyId } from "@/lib/company";
 import { env } from "@/lib/env";
 import {
@@ -10,8 +10,13 @@ import {
   type ConversationFilter,
 } from "@/lib/services/conversation-admin.service";
 import { effectiveMode, getAssistantSettings } from "@/lib/services/assistant-settings.service";
-import { Avatar, formatListTime } from "@/components/conversaciones/conversation-view";
-import { AutoRefresh, FolderSelect, InboxSearch } from "@/components/conversaciones/inbox-client";
+import { escalationTypeLabel } from "@/lib/conversation/escalation-labels";
+import { formatListTime } from "@/components/conversaciones/conversation-view";
+import { AutoRefresh, FolderSelect, InboxSearch, InboxTabs, ScrollMemory } from "@/components/conversaciones/inbox-client";
+import { Avatar } from "@/components/ui/avatar";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
+import { buttonClass } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 40;
@@ -26,11 +31,11 @@ export const FILTERS: { value: ConversationFilter; label: string }[] = [
   { value: "human", label: "Atención humana" },
   { value: "paused", label: "IA en pausa" },
   { value: "handed_off", label: "Canalizadas" },
-  { value: "errors", label: "Con errores" },
+  { value: "errors", label: "Con errores de envío" },
   { value: "test", label: "Pruebas" },
 ];
 
-const MODE_LABELS = { OFF: "IA apagada", TEST_ONLY: "IA solo pruebas", ON: "IA activa" } as const;
+const MODE_LABELS = { OFF: "Asistente apagado", TEST_ONLY: "Asistente solo pruebas", ON: "Asistente activo" } as const;
 
 export interface InboxParams {
   tab: InboxTab;
@@ -59,55 +64,24 @@ export function inboxQuery(params: InboxParams, overrides: Partial<InboxParams> 
   return text ? `?${text}` : "";
 }
 
-const ROLE_PREFIX: Record<string, string> = { ASSISTANT: "IA: ", HUMAN_AGENT: "Equipo: ", SYSTEM: "" };
+const ROLE_PREFIX: Record<string, string> = { ASSISTANT: "IA: ", HUMAN_AGENT: "Equipo: ", SYSTEM: "Sistema: ", USER: "" };
 
 /**
- * Armazón de la bandeja: lista de chats | chat | (detalles, dentro del chat).
- * En móvil se muestra la lista o el chat, nunca ambos.
+ * Página de Conversaciones: encabezado, indicadores y tres columnas
+ * (lista | historial | contexto). En móvil: lista → chat → contexto.
  */
-export function InboxShell({ list, children, hasSelection }: { list: React.ReactNode; children: React.ReactNode; hasSelection: boolean }) {
-  return (
-    <div className="flex h-full min-h-0 w-full bg-surface">
-      <div
-        className={cn(
-          "h-full min-h-0 w-full shrink-0 flex-col border-r border-ink-200 md:flex md:w-[340px]",
-          hasSelection ? "hidden" : "flex"
-        )}
-      >
-        {list}
-      </div>
-      <div className={cn("h-full min-h-0 min-w-0 flex-1", hasSelection ? "flex" : "hidden md:flex")}>{children}</div>
-      <AutoRefresh />
-    </div>
-  );
-}
-
-export function InboxEmptyChat({ tab }: { tab: InboxTab }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-ink-50 p-8 text-center">
-      <div className="flex size-16 items-center justify-center rounded-2xl bg-surface text-accent-600 shadow-card">
-        {tab === "asesores" ? <UserSquare2 className="size-8" aria-hidden /> : <MessagesSquare className="size-8" aria-hidden />}
-      </div>
-      <p className="text-base font-semibold text-ink-900">{tab === "asesores" ? "Elige un asesor" : "Elige una conversación"}</p>
-      <p className="max-w-sm text-sm text-ink-500">
-        {tab === "asesores"
-          ? "Verás los avisos de leads que recibió por WhatsApp y, si escribe al número del bot, su conversación."
-          : "Selecciona un chat de la lista para ver el historial con el cliente, lo que entendió la IA y a qué asesor se canalizó."}
-      </p>
-    </div>
-  );
-}
-
-export async function InboxList({
+export async function InboxPage({
   params,
-  selectedId,
-  basePath,
   isAdmin,
+  hasSelection,
+  selectedId,
+  children,
 }: {
   params: InboxParams;
-  selectedId?: string;
-  basePath: string;
   isAdmin: boolean;
+  hasSelection: boolean;
+  selectedId?: string;
+  children: React.ReactNode;
 }) {
   const companyId = await getDefaultCompanyId();
   const [settings, counts] = await Promise.all([
@@ -115,115 +89,136 @@ export async function InboxList({
     countAttentionItems(companyId).catch(() => null),
   ]);
   const mode = settings ? effectiveMode(settings) : "OFF";
-  const attentionTotal = counts ? counts.pendingEscalations + counts.humanControl : 0;
 
   return (
-    <>
-      <div className="shrink-0 space-y-3 border-b border-ink-200 px-4 pb-3 pt-4">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-lg font-semibold text-ink-900">Bandeja</h1>
-          <div className="flex items-center gap-1">
-            <span
-              className={cn(
-                "mr-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                mode === "ON" ? "bg-emerald-50 text-emerald-700" : mode === "TEST_ONLY" ? "bg-accent-50 text-accent-700" : "bg-ink-100 text-ink-600"
-              )}
-              title={env.assistant.killSwitch ? "Apagado por ASSISTANT_DISABLED" : undefined}
-            >
+    <div className="flex flex-col gap-4 md:h-[calc(100dvh-9.5rem)] lg:h-[calc(100dvh-6.25rem)]">
+      <div className={cn("shrink-0 space-y-4", hasSelection && "hidden md:block")}>
+        <PageHeader
+          title="Conversaciones"
+          description="Asistente de WhatsApp: historial, lo que entendió, canalizaciones y pendientes."
+          actions={
+            <>
               <span
-                className={cn("size-1.5 rounded-full", mode === "ON" ? "bg-emerald-500" : mode === "TEST_ONLY" ? "bg-accent-500" : "bg-ink-400")}
-              />
-              {env.assistant.killSwitch ? "IA apagada (emergencia)" : MODE_LABELS[mode]}
-            </span>
-            {isAdmin && (
-              <>
-                <Link
-                  href="/conversaciones/simulador"
-                  className="flex size-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-800"
-                  title="Simulador"
-                  aria-label="Simulador"
-                >
-                  <FlaskConical className="size-4" aria-hidden />
-                </Link>
-                <Link
-                  href="/conversaciones/ajustes"
-                  className="flex size-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-800"
-                  title="Configuración del asistente"
-                  aria-label="Configuración del asistente"
-                >
-                  <SlidersHorizontal className="size-4" aria-hidden />
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-ink-100 p-1" role="tablist">
-          {(
-            [
-              { tab: "clientes", label: "Clientes", icon: Users },
-              { tab: "asesores", label: "Asesores", icon: UserSquare2 },
-            ] as const
-          ).map(({ tab, label, icon: Icon }) => (
-            <Link
-              key={tab}
-              href={`/conversaciones${tab === "asesores" ? "?tab=asesores" : ""}`}
-              role="tab"
-              aria-selected={params.tab === tab}
-              className={cn(
-                "flex items-center justify-center gap-1.5 rounded-md py-1.5 text-sm font-medium transition-colors",
-                params.tab === tab ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                className={cn(
+                  "inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-medium",
+                  env.assistant.killSwitch || mode === "OFF" ? "bg-ink-100 text-ink-700" : mode === "TEST_ONLY" ? "bg-sky-50 text-sky-800" : "bg-emerald-50 text-emerald-800"
+                )}
+              >
+                <span
+                  className={cn(
+                    "size-2 rounded-full",
+                    env.assistant.killSwitch || mode === "OFF" ? "bg-ink-400" : mode === "TEST_ONLY" ? "bg-sky-500" : "bg-emerald-500"
+                  )}
+                  aria-hidden
+                />
+                {env.assistant.killSwitch ? "Asistente apagado (emergencia)" : MODE_LABELS[mode]}
+              </span>
+              {isAdmin && (
+                <>
+                  <Link href="/conversaciones/simulador" className={buttonClass("secondary")}>
+                    <FlaskConical className="size-4" aria-hidden />
+                    Simulador
+                  </Link>
+                  <Link href="/conversaciones/ajustes" className={buttonClass("secondary", "icon")} title="Configuración del asistente" aria-label="Configuración del asistente">
+                    <SlidersHorizontal className="size-4" aria-hidden />
+                  </Link>
+                </>
               )}
-            >
-              <Icon className="size-4" aria-hidden />
-              {label}
-            </Link>
-          ))}
-        </div>
-
-        <InboxSearch basePath={basePath} placeholder={params.tab === "asesores" ? "Buscar asesor…" : "Buscar nombre, teléfono o ID…"} />
-
-        {params.tab === "clientes" && (
-          <FolderSelect
-            basePath={basePath}
-            value={params.filter}
-            options={FILTERS.map((item) => ({ ...item, count: item.value === "attention" ? attentionTotal : undefined }))}
-          />
-        )}
-
-        {params.tab === "clientes" && counts && (counts.pendingEscalations > 0 || counts.deliveryIssues > 0) && (
-          <div className="flex flex-wrap gap-1.5 text-[11px]">
-            {counts.pendingEscalations > 0 && (
-              <Link
-                href={`/conversaciones${inboxQuery(params, { filter: "attention", page: 1 })}`}
-                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100"
-              >
-                <AlertTriangle className="size-3" aria-hidden />
-                {counts.pendingEscalations} pendiente(s)
-              </Link>
-            )}
-            {counts.deliveryIssues > 0 && (
-              <Link
-                href={`/conversaciones${inboxQuery(params, { filter: "errors", page: 1 })}`}
-                className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 font-medium text-rose-700 hover:bg-rose-100"
-              >
-                {counts.deliveryIssues} envío(s) con problema · 7 d
-              </Link>
-            )}
+            </>
+          }
+        />
+        {counts && (
+          <div className="hidden grid-cols-3 gap-4 md:grid">
+            <StatCard
+              size="sm"
+              label="Pendientes de gerencia / humano"
+              value={counts.pendingEscalations}
+              icon={MessageSquareWarning}
+              tone="warning"
+              href={`/conversaciones${inboxQuery({ ...params, tab: "clientes" }, { filter: "attention", page: 1 })}`}
+            />
+            <StatCard
+              size="sm"
+              label="Contactos con IA pausada por una persona"
+              value={counts.humanControl}
+              icon={BotOff}
+              tone="success"
+              href={`/conversaciones${inboxQuery({ ...params, tab: "clientes" }, { filter: "human", page: 1 })}`}
+            />
+            <StatCard
+              size="sm"
+              label="Envíos fallidos o inciertos (7 días)"
+              value={counts.deliveryIssues}
+              icon={AlertTriangle}
+              tone="danger"
+              href={`/conversaciones${inboxQuery({ ...params, tab: "clientes" }, { filter: "errors", page: 1 })}`}
+            />
           </div>
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-        {params.tab === "asesores" ? <AdvisorItems params={params} selectedId={selectedId} /> : <ClientItems params={params} selectedId={selectedId} />}
+      <div className={cn("flex min-h-0 flex-1 gap-4", hasSelection ? "h-[calc(100dvh-7.5rem)] md:h-auto" : "")}>
+        <section
+          aria-label="Lista de conversaciones"
+          className={cn(
+            "card min-h-[480px] w-full shrink-0 flex-col overflow-hidden md:flex md:min-h-0 md:w-[340px] lg:w-[360px]",
+            hasSelection ? "hidden" : "flex"
+          )}
+        >
+          <InboxList params={params} selectedId={selectedId} counts={counts} />
+        </section>
+        <div className={cn("min-h-0 min-w-0 flex-1", hasSelection ? "flex" : "hidden md:flex")}>{children}</div>
       </div>
+      <AutoRefresh />
+    </div>
+  );
+}
+
+export function InboxEmptyChat({ tab }: { tab: InboxTab }) {
+  return (
+    <div className="card flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="flex size-16 items-center justify-center rounded-full bg-accent-100 text-accent-700">
+        {tab === "asesores" ? <UserSquare2 className="size-8" aria-hidden /> : <MessagesSquare className="size-8" aria-hidden />}
+      </div>
+      <p className="text-base font-semibold text-ink-950">{tab === "asesores" ? "Elige un asesor" : "Elige una conversación"}</p>
+      <p className="max-w-sm text-sm text-ink-500">
+        {tab === "asesores"
+          ? "Verás los avisos de nuevos leads que recibió y, si escribe al número del bot, sus mensajes."
+          : "Selecciona un chat para ver el historial con el cliente, lo que entendió la IA y a qué asesor se canalizó."}
+      </p>
+    </div>
+  );
+}
+
+function InboxList({
+  params,
+  selectedId,
+  counts,
+}: {
+  params: InboxParams;
+  selectedId?: string;
+  counts: Awaited<ReturnType<typeof countAttentionItems>> | null;
+}) {
+  const attentionTotal = counts ? counts.pendingEscalations + counts.humanControl : 0;
+  return (
+    <>
+      <div className="shrink-0 space-y-3 border-b border-ink-100 p-4">
+        <InboxTabs current={params.tab} />
+        <InboxSearch placeholder={params.tab === "asesores" ? "Buscar asesor por nombre o teléfono…" : "Buscar por nombre, teléfono o ID…"} />
+        {params.tab === "clientes" && (
+          <FolderSelect value={params.filter} options={FILTERS.map((item) => ({ ...item, count: item.value === "attention" ? attentionTotal : undefined }))} />
+        )}
+      </div>
+      <ScrollMemory tab={params.tab} selectedId={selectedId} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        {params.tab === "asesores" ? <AdvisorItems params={params} selectedId={selectedId} /> : <ClientItems params={params} selectedId={selectedId} />}
+      </ScrollMemory>
     </>
   );
 }
 
 function ListMessage({ title, description, error }: { title: string; description?: string; error?: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-1.5 px-6 py-12 text-center">
+    <div className="flex flex-col items-center gap-1.5 px-6 py-12 text-center" role={error ? "alert" : undefined}>
       <p className={cn("text-sm font-medium", error ? "text-rose-700" : "text-ink-700")}>{title}</p>
       {description && <p className={cn("text-xs", error ? "text-rose-600" : "text-ink-500")}>{description}</p>}
     </div>
@@ -241,11 +236,16 @@ async function ClientItems({ params, selectedId }: { params: InboxParams; select
       pageSize: PAGE_SIZE,
     });
   } catch (error) {
-    return <ListMessage error title="No se pudieron cargar las conversaciones" description={error instanceof Error ? error.message : undefined} />;
+    return <ListMessage error title="No se pudieron cargar las conversaciones" description={error instanceof Error ? `${error.message} Recarga la página para reintentar.` : undefined} />;
   }
 
   if (data.items.length === 0) {
-    return <ListMessage title="Sin conversaciones en esta carpeta" description={params.q ? "Ajusta tu búsqueda." : undefined} />;
+    return (
+      <ListMessage
+        title={params.q ? "Sin resultados" : "Sin conversaciones en esta carpeta"}
+        description={params.q ? "Ningún chat coincide con la búsqueda." : params.filter !== "all" ? "Prueba con la carpeta “Todas”." : undefined}
+      />
+    );
   }
 
   const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
@@ -259,35 +259,25 @@ async function ClientItems({ params, selectedId }: { params: InboxParams; select
           const last = conversation.messages[0];
           const status = conversationStatus(conversation);
           const selected = conversation.id === selectedId;
-          const needsAttention = conversation._count.escalations > 0 || Boolean(conversation.lastError) || status.key === "human" || status.key === "paused";
+          const pendingTypes = [...new Set(conversation.escalations.map((e) => e.type))];
           return (
-            <li key={conversation.id}>
+            <li key={conversation.id} data-chat-id={conversation.id}>
               <Link
                 href={`/conversaciones/${conversation.id}${query}`}
+                aria-current={selected ? "true" : undefined}
                 className={cn(
-                  "relative flex gap-3 border-b border-ink-100 px-4 py-3 transition-colors",
-                  selected ? "bg-accent-50" : "hover:bg-ink-50"
+                  "relative flex gap-3 border-b border-ink-100 px-4 py-3 transition-colors duration-150",
+                  selected ? "bg-accent-50" : "hover:bg-surface-muted"
                 )}
               >
-                {selected && <span className="absolute inset-y-0 left-0 w-0.5 bg-accent-600" aria-hidden />}
-                <div className="relative">
-                  <Avatar name={name} />
-                  <span
-                    className={cn(
-                      "absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full ring-2 ring-surface",
-                      status.key === "ai" ? "bg-accent-600 text-white" : status.key === "waiting" ? "bg-sky-400 text-white" : "bg-amber-500 text-white"
-                    )}
-                    title={status.label}
-                  >
-                    {status.key === "ai" || status.key === "waiting" ? <Bot className="size-2.5" aria-hidden /> : <Headset className="size-2.5" aria-hidden />}
-                  </span>
-                </div>
+                {selected && <span className="absolute inset-y-0 left-0 w-1 bg-accent-500" aria-hidden />}
+                <Avatar name={name} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2">
-                    <p className={cn("truncate text-sm text-ink-900", needsAttention ? "font-semibold" : "font-medium")}>{name}</p>
-                    <span className="shrink-0 text-[11px] text-ink-400">{formatListTime(conversation.lastActivityAt)}</span>
+                    <p className="truncate text-sm font-semibold text-ink-950">{name}</p>
+                    <span className="shrink-0 text-[11px] text-ink-500">{formatListTime(conversation.lastActivityAt)}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-[13px] text-ink-500">
+                  <p className="mt-0.5 truncate text-[13px] text-ink-600">
                     {last ? (
                       <>
                         <span className="text-ink-400">{ROLE_PREFIX[last.role] ?? ""}</span>
@@ -298,27 +288,29 @@ async function ClientItems({ params, selectedId }: { params: InboxParams; select
                     )}
                   </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                    {conversation.lead?.assignedAdvisor && (
-                      <span className="inline-flex max-w-[11rem] items-center gap-1 truncate rounded-full bg-emerald-50 px-1.5 py-px text-[10px] font-medium text-emerald-700">
-                        <UserSquare2 className="size-2.5 shrink-0" aria-hidden />
-                        <span className="truncate">{conversation.lead.assignedAdvisor.name}</span>
-                      </span>
-                    )}
-                    {status.key !== "ai" && (
+                    {pendingTypes.map((type) => (
                       <span
+                        key={type}
                         className={cn(
-                          "rounded-full px-1.5 py-px text-[10px] font-medium",
-                          status.key === "waiting" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-800"
+                          "rounded-md px-1.5 py-px text-[10px] font-semibold",
+                          type === "MANAGEMENT" || type === "PROCESSING_ERROR" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800"
                         )}
                       >
-                        {status.key === "waiting" ? "Esperando" : status.key === "human" ? "Humano" : "Pausada"}
+                        {escalationTypeLabel(type)}
+                      </span>
+                    ))}
+                    {status.key !== "ai" && (
+                      <span className={cn("rounded-md px-1.5 py-px text-[10px] font-medium", status.key === "waiting" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-800")}>
+                        {status.key === "waiting" ? "Esperando tras canalizar" : status.key === "human" ? "Atención humana" : "IA en pausa"}
                       </span>
                     )}
-                    {conversation._count.escalations > 0 && (
-                      <span className="rounded-full bg-amber-500 px-1.5 py-px text-[10px] font-semibold text-white">{conversation._count.escalations} pendiente</span>
+                    {conversation.lead?.assignedAdvisor && (
+                      <span className="max-w-[10rem] truncate rounded-md bg-emerald-50 px-1.5 py-px text-[10px] font-medium text-emerald-700">
+                        {conversation.lead.assignedAdvisor.name}
+                      </span>
                     )}
-                    {conversation.lastError && <span className="rounded-full bg-rose-50 px-1.5 py-px text-[10px] font-medium text-rose-700">Error</span>}
-                    {conversation.isTest && <span className="rounded-full bg-accent-50 px-1.5 py-px text-[10px] font-medium text-accent-700">Prueba</span>}
+                    {conversation.lastError && <span className="rounded-md bg-rose-50 px-1.5 py-px text-[10px] font-medium text-rose-700">Error</span>}
+                    {conversation.isTest && <span className="rounded-md bg-ink-100 px-1.5 py-px text-[10px] font-medium text-ink-600">Prueba</span>}
                   </div>
                 </div>
               </Link>
@@ -330,17 +322,17 @@ async function ClientItems({ params, selectedId }: { params: InboxParams; select
         <div className="flex items-center justify-between px-4 py-3 text-xs">
           {params.page > 1 ? (
             <Link href={`/conversaciones${inboxQuery(params, { page: params.page - 1 })}`} className="font-medium text-accent-700 hover:underline">
-              ← Anteriores
+              ← Más recientes
             </Link>
           ) : (
             <span />
           )}
-          <span className="text-ink-400">
-            {params.page} / {totalPages}
+          <span className="text-ink-500">
+            Página {params.page} de {totalPages}
           </span>
           {params.page < totalPages ? (
             <Link href={`/conversaciones${inboxQuery(params, { page: params.page + 1 })}`} className="font-medium text-accent-700 hover:underline">
-              Siguientes →
+              Anteriores →
             </Link>
           ) : (
             <span />
@@ -356,10 +348,10 @@ async function AdvisorItems({ params, selectedId }: { params: InboxParams; selec
   try {
     threads = await listAdvisorThreads({ companyId: await getDefaultCompanyId(), search: params.q });
   } catch (error) {
-    return <ListMessage error title="No se pudieron cargar los asesores" description={error instanceof Error ? error.message : undefined} />;
+    return <ListMessage error title="No se pudieron cargar los asesores" description={error instanceof Error ? `${error.message} Recarga la página para reintentar.` : undefined} />;
   }
   if (threads.length === 0) {
-    return <ListMessage title="Sin asesores" description={params.q ? "Ajusta tu búsqueda." : "Da de alta asesores en la sección Asesores."} />;
+    return <ListMessage title={params.q ? "Sin resultados" : "Sin asesores"} description={params.q ? "Ningún asesor coincide con la búsqueda." : "Da de alta asesores en la sección Asesores."} />;
   }
 
   const query = inboxQuery(params);
@@ -370,37 +362,36 @@ async function AdvisorItems({ params, selectedId }: { params: InboxParams; selec
       {threads.map((thread) => {
         const selected = thread.advisor.id === selectedId;
         const paused = Boolean(thread.advisor.pausedUntil && thread.advisor.pausedUntil > now);
+        const availability = !thread.advisor.active
+          ? { dot: "bg-ink-300", label: "Inactivo: no recibe leads" }
+          : paused
+            ? { dot: "bg-amber-500", label: "En pausa: no recibe leads" }
+            : { dot: "bg-emerald-500", label: "Disponible para recibir leads" };
         return (
-          <li key={thread.advisor.id}>
+          <li key={thread.advisor.id} data-chat-id={thread.advisor.id}>
             <Link
               href={`/conversaciones/asesor/${thread.advisor.id}${query}`}
+              aria-current={selected ? "true" : undefined}
               className={cn(
-                "relative flex gap-3 border-b border-ink-100 px-4 py-3 transition-colors",
-                selected ? "bg-accent-50" : "hover:bg-ink-50",
-                !thread.advisor.active && "opacity-60"
+                "relative flex gap-3 border-b border-ink-100 px-4 py-3 transition-colors duration-150",
+                selected ? "bg-accent-50" : "hover:bg-surface-muted"
               )}
             >
-              {selected && <span className="absolute inset-y-0 left-0 w-0.5 bg-accent-600" aria-hidden />}
+              {selected && <span className="absolute inset-y-0 left-0 w-1 bg-accent-500" aria-hidden />}
               <div className="relative">
-                <Avatar name={thread.advisor.name} />
-                <span
-                  className={cn(
-                    "absolute bottom-0 right-0 size-3 rounded-full ring-2 ring-surface",
-                    !thread.advisor.active ? "bg-ink-300" : paused ? "bg-amber-500" : "bg-emerald-500"
-                  )}
-                  title={!thread.advisor.active ? "Inactivo" : paused ? "En pausa" : "Activo"}
-                />
+                <Avatar name={thread.advisor.name} className={cn(!thread.advisor.active && "opacity-60")} />
+                <span className={cn("absolute bottom-0 right-0 size-3 rounded-full ring-2 ring-surface", availability.dot)} title={availability.label} aria-hidden />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <p className="truncate text-sm font-medium text-ink-900">{thread.advisor.name}</p>
-                  <span className="shrink-0 text-[11px] text-ink-400">{formatListTime(thread.lastAt)}</span>
+                  <p className={cn("truncate text-sm font-semibold", thread.advisor.active ? "text-ink-950" : "text-ink-500")}>{thread.advisor.name}</p>
+                  <span className="shrink-0 text-[11px] text-ink-500">{formatListTime(thread.lastAt)}</span>
                 </div>
-                <p className="mt-0.5 truncate text-[13px] text-ink-500">
+                <p className="mt-0.5 truncate text-[13px] text-ink-600">
                   {thread.preview ? (
                     thread.preview.kind === "message" ? (
                       <>
-                        <span className="text-ink-400">{thread.preview.role === "USER" ? "" : ROLE_PREFIX[thread.preview.role] ?? ""}</span>
+                        <span className="text-ink-400">{ROLE_PREFIX[thread.preview.role] ?? ""}</span>
                         {thread.preview.text}
                       </>
                     ) : (
@@ -410,23 +401,20 @@ async function AdvisorItems({ params, selectedId }: { params: InboxParams; selec
                       </>
                     )
                   ) : (
-                    "Sin actividad"
+                    "Sin actividad registrada"
                   )}
                 </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                  <span className="rounded-full bg-ink-100 px-1.5 py-px text-[10px] font-medium text-ink-600">
-                    {thread.leadsThisWeek} lead(s) · 7 d
+                  <span className="sr-only">{availability.label}.</span>
+                  <span className="rounded-md bg-ink-100 px-1.5 py-px text-[10px] font-medium text-ink-700">
+                    {thread.leadsThisWeek} lead{thread.leadsThisWeek === 1 ? "" : "s"} · últimos 7 días
                   </span>
-                  {thread.conversationId && (
-                    <span className="rounded-full bg-accent-50 px-1.5 py-px text-[10px] font-medium text-accent-700">Escribe al bot</span>
-                  )}
+                  {thread.conversationId && <span className="rounded-md bg-sky-50 px-1.5 py-px text-[10px] font-medium text-sky-700">Escribe al bot</span>}
                   {thread.preview?.kind === "lead" && !thread.preview.notified && (
-                    <span className="rounded-full bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-800">Aviso pendiente</span>
+                    <span className="rounded-md bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-800">Aviso sin confirmar</span>
                   )}
-                  {!thread.advisor.active && <span className="rounded-full bg-ink-100 px-1.5 py-px text-[10px] font-medium text-ink-500">Inactivo</span>}
-                  {paused && thread.advisor.active && (
-                    <span className="rounded-full bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-800">En pausa</span>
-                  )}
+                  {!thread.advisor.active && <span className="rounded-md bg-ink-100 px-1.5 py-px text-[10px] font-medium text-ink-500">Inactivo</span>}
+                  {paused && thread.advisor.active && <span className="rounded-md bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-800">En pausa</span>}
                 </div>
               </div>
             </Link>

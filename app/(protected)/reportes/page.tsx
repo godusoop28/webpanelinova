@@ -1,16 +1,20 @@
-import { Download, FileSpreadsheet } from "lucide-react";
+import { CheckCircle2, Clock, Download, FileSpreadsheet, Info, TriangleAlert, UserCheck, Users, UsersRound } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
-import { listLeadRows } from "@/lib/services/lead-view.service";
-import { listAdvisorViews } from "@/lib/services/advisor.service";
+import { leadFilterOptions, listLeadRows } from "@/lib/services/lead-view.service";
 import { getReportData, canonicalRouteToInterestTypes, type CanonicalRoute } from "@/lib/reporting/report-data";
+import { ALL_CANONICAL_ROUTES, ROUTE_LABELS, percent } from "@/lib/reporting/report-aggregation";
 import { resolveDateRange, presetFromSearchParams, InvalidDateRangeError } from "@/lib/reporting/date-range";
 import { DateRangeFilter } from "@/components/date-range-filter";
-import { SummaryCards } from "@/components/reports/summary-cards";
-import { BreakdownCard } from "@/components/reports/breakdown-card";
 import { AdvisorBreakdownTable } from "@/components/reports/advisor-breakdown-table";
-import { LeadFilters } from "@/components/reports/lead-filters";
+import { LeadDetailFilters, ReportFilters } from "@/components/reports/lead-filters";
 import { LeadDetailTable } from "@/components/reports/lead-detail-table";
+import { ROUTE_ICONS } from "@/components/leads/lead-badges";
+import { PageHeader } from "@/components/ui/page-header";
+import { Card, SectionHeader } from "@/components/ui/card";
+import { StatCard, PercentPill } from "@/components/ui/stat-card";
+import { BarList } from "@/components/ui/bar-list";
+import { buttonClass } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/state";
 
 const PAGE_SIZE = 50;
@@ -26,6 +30,8 @@ interface ReportesSearchParams {
   estado?: string;
   origen?: string;
 }
+
+const FILTER_KEYS = ["range", "from", "to", "q", "ruta", "asesor", "estado", "origen"] as const;
 
 export default async function ReportesPage({
   searchParams,
@@ -45,18 +51,25 @@ export default async function ReportesPage({
   }
 
   const page = Math.max(1, Number(params.page) || 1);
+  const route = params.ruta && (ALL_CANONICAL_ROUTES as string[]).includes(params.ruta) ? (params.ruta as CanonicalRoute) : undefined;
+  const interestTypes = route ? canonicalRouteToInterestTypes(route) : undefined;
 
   let loadError: string | null = null;
   let report: Awaited<ReturnType<typeof getReportData>> | null = null;
   let leadsPage: Awaited<ReturnType<typeof listLeadRows>> | null = null;
-  let advisors: Awaited<ReturnType<typeof listAdvisorViews>> = [];
+  let options: Awaited<ReturnType<typeof leadFilterOptions>> = { origins: [], advisors: [] };
 
   if (range) {
     try {
       const companyId = await getDefaultCompanyId();
-      const [reportResult, advisorsResult, leadsResult] = await Promise.all([
-        getReportData({ companyId, startDate: range.startDate, endDate: range.endDate }),
-        listAdvisorViews(companyId),
+      [report, options, leadsPage] = await Promise.all([
+        getReportData({
+          companyId,
+          startDate: range.startDate,
+          endDate: range.endDate,
+          filters: { interestTypes, origin: params.origen, advisorId: params.asesor },
+        }),
+        leadFilterOptions(companyId),
         listLeadRows(
           {
             companyId,
@@ -65,121 +78,166 @@ export default async function ReportesPage({
             search: params.q,
             status: params.estado,
             advisorId: params.asesor,
-            interestType: params.ruta ? canonicalRouteToInterestTypes(params.ruta as CanonicalRoute) : undefined,
+            interestType: interestTypes,
             origin: params.origen,
           },
           page,
           PAGE_SIZE
         ),
       ]);
-      report = reportResult;
-      advisors = advisorsResult;
-      leadsPage = leadsResult;
     } catch (error) {
       loadError = error instanceof Error ? error.message : "Error desconocido";
     }
   }
 
-  const pdfParams = new URLSearchParams();
-  if (range) {
-    pdfParams.set("range", preset);
-    if (preset === "custom" && custom) {
-      pdfParams.set("from", custom.from);
-      pdfParams.set("to", custom.to);
-    }
+  // Exportaciones: mismo periodo y mismos filtros que la pantalla.
+  const exportParams = new URLSearchParams();
+  for (const key of FILTER_KEYS) {
+    const value = params[key];
+    if (value) exportParams.set(key, value);
   }
+  if (!exportParams.has("range")) exportParams.set("range", preset);
 
   function pageHref(targetPage: number): string {
-    const p = new URLSearchParams();
-    if (params.range) p.set("range", params.range);
-    if (params.from) p.set("from", params.from);
-    if (params.to) p.set("to", params.to);
-    if (params.q) p.set("q", params.q);
-    if (params.ruta) p.set("ruta", params.ruta);
-    if (params.asesor) p.set("asesor", params.asesor);
-    if (params.estado) p.set("estado", params.estado);
-    if (params.origen) p.set("origen", params.origen);
+    const p = new URLSearchParams(exportParams);
     p.set("page", String(targetPage));
-    return `/reportes?${p.toString()}`;
+    return `/reportes?${p.toString()}#detalle`;
   }
 
+  const summary = report?.summary;
+  const globalFilters = Boolean(route || params.origen || params.asesor);
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-ink-900">Reportes</h1>
-          <p className="text-sm text-ink-500">
-            Consulta el desempeño de los leads por periodo, origen, ruta y asesor.
+    <div className="space-y-5">
+      <PageHeader
+        title="Reportes"
+        description={
+          <>
+            Desempeño de leads y asignaciones.
             {user.role === "CONSULTA" && " Modo de solo lectura."}
+          </>
+        }
+        actions={
+          <>
+            <DateRangeFilter current={preset} rangeLabel={range?.label} />
+            {range && (
+              <>
+                <a href={`/api/reports/pdf?${exportParams.toString()}`} className={buttonClass("dark")}>
+                  <Download className="size-4" aria-hidden />
+                  Descargar PDF
+                </a>
+                <a href={`/api/reports/csv?${exportParams.toString()}`} className={buttonClass("secondary")}>
+                  <FileSpreadsheet className="size-4" aria-hidden />
+                  Exportar CSV
+                </a>
+              </>
+            )}
+          </>
+        }
+      />
+
+      <Card className="p-4">
+        <ReportFilters advisors={options.advisors.map((a) => ({ id: a.id, name: a.active ? a.name : `${a.name} (inactivo)` }))} origins={options.origins} />
+        {globalFilters && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-500">
+            <Info className="size-3.5" aria-hidden />
+            Los indicadores, distribuciones, detalle y exportaciones reflejan estos filtros.
           </p>
-        </div>
-        <div className="flex flex-col items-start gap-3 lg:items-end">
-          <DateRangeFilter current={preset} />
-          {range && (
-            <div className="flex flex-wrap items-center gap-2">
-              <a
-                href={`/api/reports/pdf?${pdfParams.toString()}`}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700"
-              >
-                <Download className="size-3.5" aria-hidden />
-                Descargar PDF
-              </a>
-              <a
-                href={`/api/reports/csv?${pdfParams.toString()}`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-surface-muted"
-              >
-                <FileSpreadsheet className="size-3.5" aria-hidden />
-                Exportar CSV
-              </a>
-            </div>
-          )}
-        </div>
-      </div>
+        )}
+      </Card>
 
       {rangeError ? (
         <ErrorState title="Rango de fechas inválido" description={rangeError} />
       ) : loadError ? (
         <ErrorState title="No se pudieron cargar los reportes" description={loadError} />
-      ) : report && leadsPage ? (
+      ) : report && summary && leadsPage ? (
         <>
-          <p className="text-xs text-ink-400">
-            Periodo: <span className="font-medium text-ink-600">{range!.label}</span>
-          </p>
-
-          <SummaryCards summary={report.summary} />
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <BreakdownCard
-              title="Distribución por ruta"
-              columnLabel="Ruta"
-              rows={report.byRoute.map((r) => ({ label: r.label, count: r.count, percent: r.percent }))}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Total de leads" value={summary.total} icon={Users} hint={`${summary.uniquePeople} persona(s) única(s) por teléfono`} />
+            <StatCard
+              label="Asignados a un asesor"
+              value={summary.assignedLeads}
+              icon={CheckCircle2}
+              tone="success"
+              hint={
+                <span className="flex items-center gap-1.5">
+                  <PercentPill value={percent(summary.assignedLeads, summary.total)} tone="success" /> del total
+                </span>
+              }
             />
-            <BreakdownCard
-              title="Distribución por origen"
-              columnLabel="Origen"
-              rows={report.byOrigin.map((r) => ({ label: r.origin, count: r.count, percent: r.percent }))}
+            <StatCard
+              label="Leads pendientes"
+              value={summary.pendingLeads}
+              icon={Clock}
+              tone="warning"
+              hint={
+                <span className="flex items-center gap-1.5">
+                  <PercentPill value={percent(summary.pendingLeads, summary.total)} tone="warning" /> sin completar
+                </span>
+              }
+            />
+            <StatCard
+              label="Con error de integración"
+              value={summary.integrationErrors}
+              icon={TriangleAlert}
+              tone="danger"
+              hint={
+                <span className="flex items-center gap-1.5">
+                  <PercentPill value={percent(summary.integrationErrors, summary.total)} tone="danger" /> del total
+                </span>
+              }
             />
           </div>
 
-          <div>
-            <h2 className="mb-3 text-sm font-semibold text-ink-900">Distribución por asesor</h2>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+            {ALL_CANONICAL_ROUTES.filter((r) => r !== "OTHER" || summary.byRoute.OTHER > 0).map((r) => (
+              <StatCard key={r} size="sm" label={ROUTE_LABELS[r]} value={summary.byRoute[r]} icon={ROUTE_ICONS[r]} />
+            ))}
+            <StatCard size="sm" label="Asesores con leads" value={summary.advisorsWithLeads} icon={UsersRound} tone="neutral" />
+            <StatCard size="sm" label="Personas únicas" value={summary.uniquePeople} icon={UserCheck} tone="neutral" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card>
+              <SectionHeader title="Distribución por ruta" description="Leads del periodo y porcentaje sobre el total." />
+              <div className="px-5 pb-3">
+                <BarList rows={report.byRoute.map((r) => ({ key: r.route, label: r.label, count: r.count, percent: r.percent, icon: ROUTE_ICONS[r.route] }))} />
+              </div>
+            </Card>
+            <Card>
+              <SectionHeader title="Distribución por origen" description="Origen registrado en cada lead." />
+              <div className="px-5 pb-3">
+                <BarList rows={report.byOrigin.map((r) => ({ key: r.origin, label: r.origin, count: r.count, percent: r.percent }))} />
+              </div>
+            </Card>
+          </div>
+
+          <Card id="asesores" className="scroll-mt-6 overflow-hidden">
+            <SectionHeader icon={UsersRound} title="Distribución por asesor" description="Leads únicos por asesor y eventos de asignación del periodo." />
             <AdvisorBreakdownTable rows={report.byAdvisor} />
-          </div>
+          </Card>
 
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-ink-900">Detalle de leads del periodo</h2>
-            <LeadFilters
-              advisors={advisors.filter((a) => a.activo).map((a) => ({ id: a.id, name: a.nombre }))}
-              origins={report.byOrigin.map((o) => o.origin).filter((o) => o !== "Sin especificar")}
-            />
+          <Card id="detalle" className="scroll-mt-6 overflow-hidden">
+            <SectionHeader title="Detalle de leads del periodo" description={`${leadsPage.total} lead(s) con los filtros aplicados.`} />
+            <div className="px-5 pb-4">
+              <LeadDetailFilters />
+            </div>
             <LeadDetailTable
               leads={leadsPage.leads}
               page={leadsPage.page}
               totalPages={Math.max(1, Math.ceil(leadsPage.total / leadsPage.limit))}
               total={leadsPage.total}
+              pageSize={PAGE_SIZE}
               pageHref={pageHref}
+              filtered={Boolean(params.q || params.estado || globalFilters)}
             />
-          </div>
+          </Card>
+
+          <p className="flex items-start gap-1.5 text-xs text-ink-500">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            Periodo: {range?.label}. &quot;Asignado&quot; significa que el lead tiene asesor; no equivale a una venta. Los eventos de asignación pueden incluir
+            reasignaciones.
+          </p>
         </>
       ) : null}
     </div>

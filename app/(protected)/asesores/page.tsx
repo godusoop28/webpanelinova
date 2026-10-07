@@ -1,13 +1,14 @@
-import { UserCheck, UserX, PauseCircle, Users } from "lucide-react";
+import { BarChart3, PauseCircle, UserCheck, UserX, UsersRound } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
 import { listAdvisorViews } from "@/lib/services/advisor.service";
 import { getAdvisorsDailyAssignmentCounts } from "@/lib/services/assignment.service";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { KpiCard } from "@/components/ui/kpi-card";
+import { Card, SectionHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState, ErrorState } from "@/components/ui/state";
 import { AddAdvisorPanel } from "@/components/asesores/add-advisor-panel";
-import { AdvisorRow } from "@/components/asesores/advisor-row";
+import { AdvisorsBoard } from "@/components/asesores/advisors-board";
 import { DistributionTest } from "@/components/asesores/distribution-test";
 import { isPaused } from "@/lib/advisors";
 import type { AdvisorView } from "@/lib/types";
@@ -27,63 +28,47 @@ export default async function AsesoresPage() {
   }
 
   const now = new Date();
-  const total = advisors.length;
   const activos = advisors.filter((a) => a.activo && !isPaused(a, now)).length;
   const pausados = advisors.filter((a) => a.activo && isPaused(a, now)).length;
   const inactivos = advisors.filter((a) => !a.activo).length;
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-ink-900">Asesores</h1>
-          <p className="text-sm text-ink-500">
-            Administra los asesores que participan en la distribución automática de leads.
-          </p>
-        </div>
-        <AddAdvisorPanel />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
-        <KpiCard label="Total asesores" icon={Users} status={loadError ? "error" : "ready"} value={total} />
-        <KpiCard label="Activos" icon={UserCheck} status={loadError ? "error" : "ready"} value={activos} />
-        <KpiCard label="Pausados" icon={PauseCircle} status={loadError ? "error" : "ready"} value={pausados} />
-        <KpiCard label="Inactivos" icon={UserX} status={loadError ? "error" : "ready"} value={inactivos} />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Probar distribución</CardTitle>
-            <CardDescription>
-              Simula la ruleta ponderada sin afectar leads reales, EasyBroker ni ManyChat.
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <DistributionTest />
-        </CardContent>
-      </Card>
+      <PageHeader
+        title="Asesores"
+        description="Administra los asesores que participan en la distribución automática de leads."
+        actions={<AddAdvisorPanel />}
+      />
 
       {loadError ? (
-        <Card>
-          <div className="p-5">
-            <ErrorState title="No se pudo cargar la información de asesores" description={loadError} />
-          </div>
-        </Card>
-      ) : advisors.length === 0 ? (
-        <Card>
-          <div className="p-5">
-            <EmptyState title="Sin asesores registrados" />
-          </div>
-        </Card>
+        <ErrorState title="No se pudo cargar la información de asesores" description={loadError} />
       ) : (
-        <div className="space-y-3">
-          {advisors.map((advisor) => (
-            <AdvisorRow key={advisor.id} advisor={advisor} leadsHoy={leadsHoyById.get(advisor.id) ?? 0} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <StatCard size="sm" label="Total de asesores" value={advisors.length} icon={UsersRound} />
+            <StatCard size="sm" label="Disponibles" value={activos} icon={UserCheck} tone="success" />
+            <StatCard size="sm" label="En pausa" value={pausados} icon={PauseCircle} tone="warning" />
+            <StatCard size="sm" label="Inactivos" value={inactivos} icon={UserX} tone="neutral" />
+          </div>
+
+          {advisors.length === 0 ? (
+            <EmptyState title="Sin asesores registrados" description="Agrega el primero con el botón “Agregar asesor”." />
+          ) : (
+            <AdvisorsBoard advisors={advisors} leadsHoy={Object.fromEntries(leadsHoyById)} />
+          )}
+        </>
       )}
+
+      <Card id="simulador" className="scroll-mt-6">
+        <SectionHeader
+          icon={BarChart3}
+          title="Simulador de distribución"
+          description="Prueba la ruleta ponderada en memoria, sin afectar leads reales ni llamar a EasyBroker o ManyChat."
+        />
+        <div className="px-5 pb-5">
+          <DistributionTest />
+        </div>
+      </Card>
     </div>
   );
 }

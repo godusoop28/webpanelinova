@@ -18,10 +18,7 @@ export default async function SimuladorPage({ searchParams }: { searchParams: Pr
   return (
     <div className="space-y-5">
       <div>
-        <Link href="/conversaciones" className="text-xs text-ink-500 hover:underline">
-          ← Conversaciones
-        </Link>
-        <h1 className="text-xl font-semibold text-ink-900">Simulador del asistente</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink-950 sm:text-[28px] sm:leading-9">Simulador del asistente</h1>
         <p className="text-sm text-ink-500">
           Mismo pipeline real (agrupación, OpenAI, inventario de EasyBroker en solo lectura), pero no envía WhatsApp, no crea leads, no mueve la ruleta ni avisa a
           nadie: las canalizaciones muestran a quién le tocaría. Recarga la página unos segundos después de enviar.

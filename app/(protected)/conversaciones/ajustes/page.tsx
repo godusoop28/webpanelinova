@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { requireRole } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
 import { getAssistantSettings } from "@/lib/services/assistant-settings.service";
@@ -23,12 +21,8 @@ export default async function AjustesAsistentePage() {
   return (
     <div className="space-y-5">
       <div>
-        <Link href="/conversaciones" className="inline-flex items-center gap-1 text-xs font-medium text-ink-500 hover:text-ink-800">
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Bandeja
-        </Link>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-semibold text-ink-900">Configuración del asistente</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-950 sm:text-[28px] sm:leading-9">Configuración del asistente</h1>
           {env.assistant.killSwitch && <Badge tone="danger">Apagado por ASSISTANT_DISABLED</Badge>}
         </div>
         <p className="text-sm text-ink-500">Modo, tiempos de respuesta, contactos de prueba y destinatarios de gerencia.</p>

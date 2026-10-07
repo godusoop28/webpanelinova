@@ -16,7 +16,7 @@ export default async function TestingPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-ink-900">Diagnóstico interno</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink-950 sm:text-[28px] sm:leading-9">Diagnóstico interno</h1>
         <p className="text-sm text-ink-500">
           Simula un lead completo — clasificación de ruta y motor de asignación — sin enviar nada a
           EasyBroker ni ManyChat. Solo visible para administradores con acceso interno habilitado.

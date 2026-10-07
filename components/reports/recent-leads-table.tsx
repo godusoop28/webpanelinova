@@ -1,63 +1,68 @@
 import Link from "next/link";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/state";
+import { LeadStatusBadge } from "@/components/leads/lead-badges";
 import { formatMexicoCityDateTime } from "@/lib/timezone";
 import { toCanonicalRoute, ROUTE_LABELS, type RawInterestType } from "@/lib/reporting/report-aggregation";
 import type { LeadView } from "@/lib/types";
 
-function statusTone(estadoLabel: string): "success" | "warning" | "danger" | "neutral" {
-  if (estadoLabel === "Con error") return "danger";
-  if (estadoLabel === "Recibido" || estadoLabel === "Procesando") return "warning";
-  if (estadoLabel === "Completado" || estadoLabel === "Notificado") return "success";
-  return "neutral";
-}
-
-/** Compact preview for the dashboard — the full, filterable table lives on /reportes. */
+/** Vista compacta para Resumen; la tabla filtrable completa vive en /reportes y /leads. */
 export function RecentLeadsTable({ leads }: { leads: LeadView[] }) {
+  if (leads.length === 0) {
+    return (
+      <div className="px-5 pb-5">
+        <EmptyState title="No hay leads en este periodo." />
+      </div>
+    );
+  }
   return (
-    <Card>
-      {leads.length === 0 ? (
-        <div className="p-5">
-          <EmptyState title="No hay leads en este periodo." />
-        </div>
-      ) : (
-        <div className="md:overflow-x-auto">
-          <table className="responsive-table w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
-                <th className="px-5 py-3 font-medium">Fecha/Hora</th>
-                <th className="px-5 py-3 font-medium">Cliente</th>
-                <th className="px-5 py-3 font-medium">Ruta</th>
-                <th className="px-5 py-3 font-medium">Asesor</th>
-                <th className="px-5 py-3 font-medium">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leads.map((lead) => {
-                const route = toCanonicalRoute(lead.interestType as RawInterestType);
-                return (
-                  <tr key={lead.id} className="border-b border-ink-50 last:border-0 hover:bg-surface-muted">
-                    <td data-label="Fecha/Hora" className="whitespace-nowrap px-5 py-3 text-ink-600">
-                      {formatMexicoCityDateTime(new Date(lead.fechaHora))}
-                    </td>
-                    <td data-label="Cliente" className="px-5 py-3 font-medium text-ink-900">
-                      <Link href={`/leads/${lead.id}`} className="hover:text-accent-700 hover:underline">
-                        {lead.nombre || "—"}
-                      </Link>
-                    </td>
-                    <td data-label="Ruta" className="px-5 py-3 text-ink-600">{ROUTE_LABELS[route]}</td>
-                    <td data-label="Asesor" className="px-5 py-3 text-ink-600">{lead.asesorAsignado || "Sin asignar"}</td>
-                    <td data-label="Estado" className="px-5 py-3">
-                      <Badge tone={statusTone(lead.estado)}>{lead.estado}</Badge>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
+    <div className="md:overflow-x-auto">
+      <table className="responsive-table data-table w-full text-left text-sm">
+        <thead>
+          <tr>
+            <th className="px-5 py-2.5">Fecha/hora</th>
+            <th className="px-5 py-2.5">Cliente</th>
+            <th className="px-5 py-2.5">Ruta</th>
+            <th className="px-5 py-2.5">Asesor</th>
+            <th className="px-5 py-2.5">Estado</th>
+            <th className="px-5 py-2.5">
+              <span className="sr-only">Abrir</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink-100">
+          {leads.map((lead) => (
+            <tr key={lead.id} className="transition-colors duration-150 hover:bg-surface-muted">
+              <td data-label="Fecha/hora" className="whitespace-nowrap px-5 py-3 text-ink-600">
+                {formatMexicoCityDateTime(new Date(lead.fechaHora))}
+              </td>
+              <td data-label="Cliente" className="px-5 py-3 font-medium text-ink-900">
+                <Link href={`/leads/${lead.id}`} className="hover:text-accent-700 hover:underline">
+                  {lead.nombre || "—"}
+                </Link>
+              </td>
+              <td data-label="Ruta" className="px-5 py-3 text-ink-600">
+                {ROUTE_LABELS[toCanonicalRoute(lead.interestType as RawInterestType)]}
+              </td>
+              <td data-label="Asesor" className="px-5 py-3 text-ink-600">
+                {lead.asesorAsignado || <span className="text-ink-400">Sin asignar</span>}
+              </td>
+              <td data-label="Estado" className="px-5 py-3">
+                <LeadStatusBadge label={lead.estado} />
+              </td>
+              <td className="px-5 py-3 text-right">
+                <Link
+                  href={`/leads/${lead.id}`}
+                  className="inline-flex size-8 items-center justify-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-ink-800"
+                  aria-label={`Ver lead de ${lead.nombre}`}
+                >
+                  <ChevronRight className="size-4" aria-hidden />
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

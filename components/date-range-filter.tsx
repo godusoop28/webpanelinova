@@ -2,8 +2,10 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Calendar, Loader2 } from "lucide-react";
+import { Calendar, ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { inputClass } from "@/components/ui/field";
+import { buttonClass } from "@/components/ui/button";
 import { DATE_RANGE_PRESETS, DATE_RANGE_PRESET_LABELS, type DateRangePreset } from "@/lib/reporting/date-range";
 
 const PRESETS: { value: DateRangePreset; label: string }[] = DATE_RANGE_PRESETS.map((value) => ({
@@ -12,17 +14,12 @@ const PRESETS: { value: DateRangePreset; label: string }[] = DATE_RANGE_PRESETS.
 }));
 
 /**
- * Root cause of the "se traba" bug this replaces: the old version called
- * router.push() the instant "Rango personalizado" was clicked — before any
- * dates existed — which made the server throw on missing from/to with no
- * error boundary to catch it, and left the transition's `isPending` stuck
- * true (all buttons permanently disabled) since the navigation never
- * resolved cleanly. Fix: selecting "custom" only reveals the date inputs
- * locally; navigation happens once on "Aplicar", and only after validating
- * from <= to here so an invalid range never reaches the server as an
- * unhandled throw.
+ * Selector de periodo. Elegir "Rango personalizado" solo muestra las
+ * fechas: se navega al pulsar "Aplicar" y tras validar desde <= hasta, para
+ * que un rango incompleto nunca llegue al servidor (causa histórica de que
+ * el panel "se trabara").
  */
-export function DateRangeFilter({ current }: { current: DateRangePreset }) {
+export function DateRangeFilter({ current, rangeLabel }: { current: DateRangePreset; rangeLabel?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -33,6 +30,7 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   function navigate(params: URLSearchParams) {
+    params.delete("page");
     startTransition(() => {
       router.push(`${pathname}?${params.toString()}`);
     });
@@ -42,7 +40,7 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
     setValidationError(null);
     if (preset === "custom") {
       setShowCustom(true);
-      return; // Wait for the user to pick dates and press "Aplicar" — never navigate on bare selection.
+      return;
     }
     setShowCustom(false);
     const params = new URLSearchParams(searchParams.toString());
@@ -70,39 +68,33 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Calendar className="size-4 shrink-0 text-ink-400" aria-hidden />
-        <div className="flex flex-wrap gap-1 rounded-lg border border-ink-200 bg-surface p-1">
-          {PRESETS.map((preset) => (
-            <button
-              key={preset.value}
-              type="button"
-              onClick={() => applyPreset(preset.value)}
-              disabled={isPending}
-              aria-pressed={current === preset.value}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                current === preset.value
-                  ? "bg-accent-600 text-white"
-                  : "text-ink-600 hover:bg-ink-100"
-              )}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-        {isPending && (
-          <span className="flex items-center gap-1.5 text-xs text-ink-500" role="status" aria-live="polite">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            Actualizando…
-          </span>
+    <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+      <div className="relative">
+        <Calendar className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" aria-hidden />
+        {isPending ? (
+          <Loader2 className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-ink-400" aria-hidden />
+        ) : (
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" aria-hidden />
         )}
+        <select
+          aria-label="Periodo"
+          value={showCustom ? "custom" : current}
+          disabled={isPending}
+          onChange={(e) => applyPreset(e.target.value as DateRangePreset)}
+          className="h-10 w-full min-w-48 cursor-pointer appearance-none rounded-lg border border-ink-200 bg-surface pl-9 pr-9 text-sm font-medium text-ink-800 shadow-sm transition-colors duration-150 hover:border-ink-300 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-200 disabled:opacity-60"
+        >
+          {PRESETS.map((preset) => (
+            <option key={preset.value} value={preset.value}>
+              {preset.label}
+            </option>
+          ))}
+        </select>
       </div>
+      {rangeLabel && !showCustom && <p className="text-xs text-ink-500 sm:text-right">{rangeLabel}</p>}
 
       {showCustom && (
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-ink-600">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="space-y-1 text-xs font-medium text-ink-600">
             Desde
             <input
               type="date"
@@ -113,10 +105,10 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
               }}
               max={customTo || undefined}
               disabled={isPending}
-              className="rounded-md border border-ink-200 px-2 py-1.5 text-xs text-ink-700"
+              className={cn(inputClass, "h-9 py-1")}
             />
           </label>
-          <label className="flex items-center gap-1.5 text-xs text-ink-600">
+          <label className="space-y-1 text-xs font-medium text-ink-600">
             Hasta
             <input
               type="date"
@@ -127,22 +119,17 @@ export function DateRangeFilter({ current }: { current: DateRangePreset }) {
               }}
               min={customFrom || undefined}
               disabled={isPending}
-              className="rounded-md border border-ink-200 px-2 py-1.5 text-xs text-ink-700"
+              className={cn(inputClass, "h-9 py-1")}
             />
           </label>
-          <button
-            type="button"
-            onClick={applyCustomRange}
-            disabled={isPending}
-            className="rounded-md bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          <button type="button" onClick={applyCustomRange} disabled={isPending} className={buttonClass("primary", "sm")}>
             Aplicar
           </button>
         </div>
       )}
 
       {validationError && (
-        <p className="text-xs font-medium text-rose-600" role="alert">
+        <p className="text-xs font-medium text-rose-700" role="alert">
           {validationError}
         </p>
       )}
