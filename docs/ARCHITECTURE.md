@@ -63,9 +63,20 @@ Timeout, Sin respuesta):
    puramente aleatorio. La selección corre dentro de una transacción de
    Postgres con bloqueo de filas (`SELECT ... FOR UPDATE`) para que dos
    leads simultáneos nunca elijan mal por una condición de carrera.
+   **Rondas por horario** (`AdvisorRound`, panel Asesores → "Rondas por
+   horario"): si en ese momento (hora de Ciudad de México) hay asesores con
+   una ronda activa que además son elegibles y tienen cupo, la ruleta se
+   limita a ellos (ponderada entre ellos si son varios). Si ninguno puede
+   recibir el lead, la ruleta sigue con todos. No afecta la asignación
+   directa del paso 1. Lógica pura en `lib/advisor-rounds.ts`; si la tabla
+   no existe o la consulta falla, la ruleta funciona igual que antes.
 4. Se crea el `LeadAssignment`, se llama a EasyBroker
    (`POST /contact_requests`, luego `PATCH /contacts/{id}` con el asesor),
-   y se notifica al asesor por ManyChat.
+   y se notifica al asesor por ManyChat. El aviso (campo `relatedInfo` del
+   flujo) lleva la ficha completa de la propiedad (precio, ubicación,
+   recámaras, baños, m², amenidades, descripción y enlace de EasyBroker) y
+   lo que busca el cliente, sin enlaces al panel (`lib/advisor-notice.ts`,
+   máximo 1000 caracteres).
 5. Cada paso queda en `AuditLog`. Si EasyBroker o ManyChat fallan, se
    encola un `IntegrationJob` que un cron reintenta con backoff (1min, 5min,
    15min, 1h — ver más abajo).

@@ -1,4 +1,4 @@
-import { BarChart3, PauseCircle, UserCheck, UserX, UsersRound } from "lucide-react";
+import { BarChart3, Clock3, PauseCircle, UserCheck, UserX, UsersRound } from "lucide-react";
 import { requireSection } from "@/lib/dal";
 import { getDefaultCompanyId } from "@/lib/company";
 import { listAdvisorViews } from "@/lib/services/advisor.service";
@@ -11,6 +11,9 @@ import { AddAdvisorPanel } from "@/components/asesores/add-advisor-panel";
 import { AdvisorsBoard } from "@/components/asesores/advisors-board";
 import { DistributionTest } from "@/components/asesores/distribution-test";
 import { isPaused } from "@/lib/advisors";
+import { isRoundActiveAt, mexicoCityClock } from "@/lib/advisor-rounds";
+import { listRounds } from "@/lib/services/advisor-round.service";
+import { AdvisorRounds, type RoundRow } from "@/components/asesores/advisor-rounds";
 import type { AdvisorView } from "@/lib/types";
 
 export default async function AsesoresPage() {
@@ -19,15 +22,34 @@ export default async function AsesoresPage() {
   let advisors: AdvisorView[] = [];
   let leadsHoyById = new Map<string, number>();
   let loadError: string | null = null;
+  let rounds: RoundRow[] = [];
+  let roundsError: string | null = null;
+  const now = new Date();
   try {
     const companyId = await getDefaultCompanyId();
-    advisors = await listAdvisorViews(companyId);
+    const [advisorList, roundListing] = await Promise.all([listAdvisorViews(companyId), listRounds(companyId)]);
+    advisors = advisorList;
     leadsHoyById = await getAdvisorsDailyAssignmentCounts(advisors.map((advisor) => advisor.id));
+    if (roundListing.ok) {
+      rounds = roundListing.rounds.map((round) => ({
+        id: round.id,
+        advisorId: round.advisorId,
+        advisorName: round.advisor.name,
+        advisorActive: round.advisor.active,
+        weekdays: round.weekdays,
+        startMinute: round.startMinute,
+        endMinute: round.endMinute,
+        active: round.active,
+        note: round.note,
+        onRoundNow: round.advisor.active && isRoundActiveAt(round, now),
+      }));
+    } else {
+      roundsError = roundListing.error;
+    }
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Error desconocido";
   }
-
-  const now = new Date();
+  const clock = mexicoCityClock(now);
   const activos = advisors.filter((a) => a.activo && !isPaused(a, now)).length;
   const pausados = advisors.filter((a) => a.activo && isPaused(a, now)).length;
   const inactivos = advisors.filter((a) => !a.activo).length;
@@ -57,6 +79,25 @@ export default async function AsesoresPage() {
             <AdvisorsBoard advisors={advisors} leadsHoy={Object.fromEntries(leadsHoyById)} />
           )}
         </>
+      )}
+
+      {!loadError && (
+        <Card id="rondas" className="scroll-mt-6">
+          <SectionHeader
+            icon={Clock3}
+            title="Rondas por horario"
+            description="En el horario de una ronda, los leads de ruleta (sin asesor propio) se asignan solo a los asesores en ronda. Si ninguno está disponible o con cupo, la ruleta reparte entre todos. Hora de Ciudad de México."
+          />
+          <div className="px-5 pb-5">
+            <AdvisorRounds
+              rounds={rounds}
+              advisors={advisors.map((a) => ({ id: a.id, name: a.nombre, active: a.activo }))}
+              loadError={roundsError}
+              todayWeekday={clock.weekday}
+              nowMinute={clock.minute}
+            />
+          </div>
+        </Card>
       )}
 
       <Card id="simulador" className="scroll-mt-6">

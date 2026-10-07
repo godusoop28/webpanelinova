@@ -11,6 +11,8 @@ import { findEligibleAdvisorsForRoute } from "@/lib/repositories/advisor.reposit
 import type { AssignmentRoute } from "@/lib/assignment-engine";
 import { pickWeightedLeastAssigned } from "@/lib/assignment-engine";
 import { mexicoCityDayRange } from "@/lib/timezone";
+import { advisorsOnRound, applyRounds } from "@/lib/advisor-rounds";
+import { loadRoundSchedules } from "@/lib/services/advisor-round.service";
 
 export type { AssignmentRoute } from "@/lib/assignment-engine";
 export { pickWeightedLeastAssigned } from "@/lib/assignment-engine";
@@ -50,6 +52,8 @@ export async function selectAndAssignAdvisor(input: {
 }): Promise<AssignmentSelectionResult> {
   const now = input.now ?? new Date();
   const { start, end } = mexicoCityDayRange(now);
+  // Fuera de la transacción: una consulta fallida dentro abortaría la transacción entera.
+  const onRound = advisorsOnRound(await loadRoundSchedules(input.companyId), now);
 
   return prisma.$transaction(async (tx) => {
     const locked = await lockEligibleAdvisorsForUpdate(tx, input.companyId, input.route, now);
@@ -59,7 +63,9 @@ export async function selectAndAssignAdvisor(input: {
       start,
       end
     );
-    const picked = pickWeightedLeastAssigned(locked, todayCounts);
+    // Rondas por horario: si hay asesores en ronda con cupo, la ruleta se limita a ellos.
+    const { pool, roundApplied } = applyRounds(locked, todayCounts, onRound);
+    const picked = pickWeightedLeastAssigned(pool, todayCounts);
 
     const candidatesConsidered: CandidateSnapshot[] = locked.map((advisor) => ({
       id: advisor.id,
@@ -80,7 +86,9 @@ export async function selectAndAssignAdvisor(input: {
       method: input.method,
       weightAtAssignment: picked.weight,
       status: "ASSIGNED",
-      reason: `weighted-least-assigned entre ${locked.length} candidato(s); ratio=${ratio.toFixed(3)}`,
+      reason: roundApplied
+        ? `ronda por horario: weighted-least-assigned entre ${pool.length} asesor(es) en ronda de ${locked.length} candidato(s); ratio=${ratio.toFixed(3)}`
+        : `weighted-least-assigned entre ${locked.length} candidato(s); ratio=${ratio.toFixed(3)}`,
     });
     await incrementAdvisorLeadsTodayCache(tx, picked.id);
 
@@ -140,8 +148,8 @@ export async function getRotationCandidatesForSimulation(
   companyId: string,
   route: AssignmentRoute,
   now: Date = new Date()
-): Promise<{ candidates: Advisor[]; todayCounts: Map<string, number> }> {
-  const candidates = await findEligibleAdvisorsForRoute(companyId, route, now);
+): Promise<{ candidates: Advisor[]; todayCounts: Map<string, number>; onRound: Set<string> }> {
+  const [candidates, rounds] = await Promise.all([findEligibleAdvisorsForRoute(companyId, route, now), loadRoundSchedules(companyId)]);
   const todayCounts = await getAdvisorsDailyAssignmentCounts(candidates.map((advisor) => advisor.id), now);
-  return { candidates, todayCounts };
+  return { candidates, todayCounts, onRound: advisorsOnRound(rounds, now) };
 }

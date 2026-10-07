@@ -8,11 +8,11 @@ import { assignContactToAdvisor, EasyBrokerApiError } from "@/lib/services/easyb
 import { notifyAdvisor, ManyChatApiError } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
 import { isLiveAutomation } from "@/lib/env";
-import { buildAdvisorLeadFields } from "@/lib/services/lead.service";
+import { buildAdvisorLeadFields, propertyNoticeFromCache } from "@/lib/services/lead.service";
 import { extractCampaignPropertyCode } from "@/lib/campaign-code";
 
-/** Same fields the webhook pipeline writes, rebuilt from the stored Lead (no EasyBroker re-fetch). */
-function buildReassignLeadFields(lead: Lead) {
+/** Same fields the webhook pipeline writes, rebuilt from the stored Lead (ficha desde el índice local, sin volver a llamar a EasyBroker). */
+async function buildReassignLeadFields(lead: Lead) {
   const raw = (lead.rawPayload ?? {}) as { interesCliente?: unknown };
   const propertyPublicId =
     lead.interestType === "PROPERTY"
@@ -26,6 +26,7 @@ function buildReassignLeadFields(lead: Lead) {
     interest: typeof raw.interesCliente === "string" ? raw.interesCliente : "",
     routeLabel: lead.route ?? "",
     propertyPublicId,
+    property: propertyPublicId ? await propertyNoticeFromCache(lead.companyId, propertyPublicId) : null,
     propertyData: lead.propertyData ?? undefined,
   });
 }
@@ -124,7 +125,7 @@ export async function reassignLead(
         // ESTE lead o el nuevo asesor recibe los datos del último lead que tuvo.
         await notifyAdvisor({
           advisorManyChatSubscriberId: advisor.manyChatSubscriberId,
-          customFields: buildReassignLeadFields(lead),
+          customFields: await buildReassignLeadFields(lead),
         });
         manyChatNotified = true;
         await logAuditEvent({

@@ -25,6 +25,7 @@ import { findAdvisorByEasyBrokerEmail } from "@/lib/repositories/advisor.reposit
 import { findLeadByRequestId } from "@/lib/repositories/lead.repository";
 import { lookupProperty } from "@/lib/services/property-catalog.service";
 import { notifyAdvisor } from "@/lib/services/manychat.service";
+import { applyRounds } from "@/lib/advisor-rounds";
 import { logAuditEvent } from "@/lib/services/audit.service";
 
 const ASSISTANT_ORIGIN = "WhatsApp IA";
@@ -138,6 +139,18 @@ function describeBudget(facts: Facts): string | null {
   return null;
 }
 
+/** Propiedades verificadas que el cliente mencionó en la conversación (para el aviso al asesor). */
+function mentionedProperties(conversation: Conversation): { publicId: string; title: string | null; url: string | null }[] {
+  if (!Array.isArray(conversation.properties)) return [];
+  return (conversation.properties as { publicId?: unknown; title?: unknown; url?: unknown; verified?: unknown }[])
+    .filter((p) => typeof p.publicId === "string" && p.verified !== false)
+    .map((p) => ({
+      publicId: p.publicId as string,
+      title: typeof p.title === "string" ? p.title : null,
+      url: typeof p.url === "string" ? p.url : null,
+    }));
+}
+
 function known(facts: Facts, key: keyof Facts): string | null {
   const fact = facts[key];
   return fact?.status === "known" ? fact.value : null;
@@ -160,8 +173,8 @@ async function dryRunAssignment(companyId: string, interesCliente: string, agent
     if (direct) return { advisorName: direct.name, method: "DIRECT_PROPERTY_ADVISOR" as const };
   }
   const { assignmentRoute } = classifyInterest(interesCliente);
-  const { candidates, todayCounts } = await getRotationCandidatesForSimulation(companyId, assignmentRoute);
-  const picked = pickWeightedLeastAssigned(candidates, todayCounts);
+  const { candidates, todayCounts, onRound } = await getRotationCandidatesForSimulation(companyId, assignmentRoute);
+  const picked = pickWeightedLeastAssigned(applyRounds(candidates, todayCounts, onRound).pool, todayCounts);
   return picked ? { advisorName: picked.name, method: "WEIGHTED_ROTATION" as const } : null;
 }
 
@@ -239,7 +252,8 @@ export async function requestCommercialHandoff(input: {
     budget: describeBudget(input.facts),
     additionalNeeds,
     summary: input.summary,
-    conversationUrl: conversationPanelUrl(conversation.id),
+    // El asesor recibe todo en el aviso; no se le manda al panel.
+    otherProperties: mentionedProperties(conversation),
   };
   const wait = waitFields(settings, "commercial", now);
 

@@ -39,13 +39,17 @@ export function DistributionTest() {
         </form>
 
         <FormMessage error={state.error} />
+        {state.roundActive && (
+          <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Hay una ronda activa: la simulación reparte solo entre los asesores en ronda con cupo.</p>
+        )}
 
         {state.results && state.results.length > 0 && (
           <ul className="space-y-2" aria-label="Resultado de la simulación">
             {state.results.map((result) => (
               <li key={result.id} className="flex items-center gap-3 text-sm">
-                <span className="w-36 shrink-0 truncate text-ink-800" title={result.nombre}>
-                  {result.nombre}
+                <span className="flex w-40 shrink-0 items-center gap-1.5 truncate text-ink-800" title={result.nombre}>
+                  <span className="truncate">{result.nombre}</span>
+                  {result.onRound && <span className="shrink-0 rounded bg-emerald-50 px-1 text-[10px] font-semibold text-emerald-700">Ronda</span>}
                 </span>
                 <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-ink-100" aria-hidden>
                   <div className="h-full rounded-full bg-accent-500" style={{ width: maxCount > 0 ? `${(result.count / maxCount) * 100}%` : "0%" }} />
@@ -65,7 +69,7 @@ export function DistributionTest() {
           Distribución ponderada
         </p>
         <p className="text-xs leading-relaxed text-ink-600">
-          Usa la disponibilidad, las rutas, los límites y la prioridad actuales de cada asesor para simular cómo se repartirían los nuevos leads.
+          Usa la disponibilidad, las rutas, los límites, la prioridad y las rondas por horario actuales de cada asesor para simular cómo se repartirían los nuevos leads.
         </p>
         <p className="rounded-lg bg-accent-100 px-3 py-2 text-xs font-medium text-accent-800">
           No crea leads, no modifica asignaciones reales ni envía mensajes.

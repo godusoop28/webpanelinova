@@ -20,6 +20,8 @@ import {
 } from "@/lib/services/advisor.service";
 import { getRotationCandidatesForSimulation } from "@/lib/services/assignment.service";
 import { pickWeightedLeastAssigned } from "@/lib/assignment-engine";
+import { applyRounds, parseTimeToMinute } from "@/lib/advisor-rounds";
+import { createRound, deleteRound, setRoundActive } from "@/lib/services/advisor-round.service";
 
 export interface AdvisorFormState {
   error?: string;
@@ -157,8 +159,9 @@ export async function resumeAdvisorAction(id: string): Promise<void> {
 
 export interface DistributionTestState {
   error?: string;
-  results?: { id: string; nombre: string; count: number }[];
+  results?: { id: string; nombre: string; count: number; onRound: boolean }[];
   totalCandidates?: number;
+  roundActive?: boolean;
 }
 
 /**
@@ -182,12 +185,14 @@ export async function simulateDistributionAction(
 
   let candidates: Awaited<ReturnType<typeof getRotationCandidatesForSimulation>>["candidates"];
   let todayCounts: Map<string, number>;
+  let onRound: Set<string>;
   try {
     const companyId = await getDefaultCompanyId();
     const routeCode = ROUTE_LABEL_TO_CODE[parsed.data.route];
     const result = await getRotationCandidatesForSimulation(companyId, routeCode);
     candidates = result.candidates;
     todayCounts = result.todayCounts;
+    onRound = result.onRound;
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Error desconocido" };
   }
@@ -198,7 +203,8 @@ export async function simulateDistributionAction(
   const counts = new Map<string, number>();
   const simulatedCounts = new Map(todayCounts);
   for (let i = 0; i < parsed.data.iterations; i++) {
-    const picked = pickWeightedLeastAssigned(candidates, simulatedCounts);
+    // Misma regla que el motor real: con rondas activas, solo los asesores en ronda con cupo.
+    const picked = pickWeightedLeastAssigned(applyRounds(candidates, simulatedCounts, onRound).pool, simulatedCounts);
     if (picked) {
       counts.set(picked.id, (counts.get(picked.id) ?? 0) + 1);
       simulatedCounts.set(picked.id, (simulatedCounts.get(picked.id) ?? 0) + 1);
@@ -206,8 +212,55 @@ export async function simulateDistributionAction(
   }
 
   const results = candidates
-    .map((advisor) => ({ id: advisor.id, nombre: advisor.name, count: counts.get(advisor.id) ?? 0 }))
+    .map((advisor) => ({ id: advisor.id, nombre: advisor.name, count: counts.get(advisor.id) ?? 0, onRound: onRound.has(advisor.id) }))
     .sort((a, b) => b.count - a.count);
 
-  return { results, totalCandidates: candidates.length };
+  return { results, totalCandidates: candidates.length, roundActive: results.some((r) => r.onRound) };
+}
+
+// ---------------------------------------------------------------------------
+// Rondas por horario
+// ---------------------------------------------------------------------------
+
+export interface RoundFormState {
+  error?: string;
+  success?: string;
+}
+
+export async function createRoundAction(_prev: RoundFormState, formData: FormData): Promise<RoundFormState> {
+  const user = await requireRole("ADMIN", "DIRECCION");
+  const advisorId = String(formData.get("advisorId") ?? "");
+  const weekdays = formData
+    .getAll("weekdays")
+    .map(Number)
+    .filter((day) => Number.isInteger(day) && day >= 1 && day <= 7);
+  const startMinute = parseTimeToMinute(String(formData.get("start") ?? ""));
+  const endMinute = parseTimeToMinute(String(formData.get("end") ?? ""));
+  const note = String(formData.get("note") ?? "").slice(0, 200);
+
+  if (!advisorId) return { error: "Elige un asesor." };
+  if (weekdays.length === 0) return { error: "Elige al menos un día." };
+  if (startMinute === null || endMinute === null) return { error: "Indica hora de inicio y de fin." };
+  if (startMinute >= 1440) return { error: "La hora de inicio debe ser antes de las 24:00." };
+  if (startMinute === endMinute) return { error: "La hora de inicio y la de fin no pueden ser iguales." };
+
+  try {
+    await createRound(await getDefaultCompanyId(), { advisorId, weekdays, startMinute, endMinute: endMinute === 0 ? 1440 : endMinute, note }, user.email);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Error desconocido" };
+  }
+  revalidateAdvisors();
+  return { success: "Ronda agregada." };
+}
+
+export async function toggleRoundAction(roundId: string, active: boolean): Promise<void> {
+  await requireRole("ADMIN", "DIRECCION");
+  await setRoundActive(await getDefaultCompanyId(), roundId, active);
+  revalidateAdvisors();
+}
+
+export async function deleteRoundAction(roundId: string): Promise<void> {
+  await requireRole("ADMIN", "DIRECCION");
+  await deleteRound(await getDefaultCompanyId(), roundId);
+  revalidateAdvisors();
 }

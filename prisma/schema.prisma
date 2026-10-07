@@ -107,6 +107,7 @@ model Company {
   propertyEvents         PropertyEvent[]
   propertyDeliveries     PropertyReportDelivery[]
   propertyReportSettings PropertyReportSettings?
+  advisorRounds          AdvisorRound[]
 
   @@map("companies")
 }
@@ -161,12 +162,42 @@ model Advisor {
   assignments LeadAssignment[]
   leads       Lead[]           @relation("LeadAssignedAdvisor")
   auditLogs   AuditLog[]
+  rounds      AdvisorRound[]
 
   @@unique([companyId, easyBrokerEmail])
   @@index([companyId])
   @@index([active])
   @@index([easyBrokerEmail])
   @@map("advisors")
+}
+
+/**
+ * Ronda por horario: mientras está activa, los leads de la ruleta ponderada
+ * se reparten solo entre los asesores en ronda (ver lib/advisor-rounds.ts).
+ * Horario en America/Mexico_City.
+ */
+model AdvisorRound {
+  id          String   @id @default(cuid())
+  companyId   String
+  advisorId   String
+  /** Días ISO (1 = lunes … 7 = domingo) en que inicia la ronda. */
+  weekdays    Int[]
+  /** Minuto del día de inicio (0-1439). */
+  startMinute Int
+  /** Minuto del día de fin (1-1440). Si es <= inicio, cruza la medianoche. */
+  endMinute   Int
+  active      Boolean  @default(true)
+  note        String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+  advisor Advisor @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, active])
+  @@index([advisorId])
+  @@map("advisor_rounds")
 }
 
 // ---------------------------------------------------------------------------

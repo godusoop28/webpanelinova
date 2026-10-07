@@ -1,4 +1,5 @@
 import "server-only";
+import { prisma } from "@/lib/db";
 import type { Advisor, AssignmentMethod, Lead, LeadInterestType } from "@prisma/client";
 import { env, isLiveAutomation } from "@/lib/env";
 import { normalizePhoneE164 } from "@/lib/phone";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/services/easybroker.service";
 import { notifyAdvisor, ManyChatApiError, type ManyChatCustomField } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
+import { buildAdvisorNoticeText, type NoticeProperty } from "@/lib/advisor-notice";
 import { recordPropertyInquirySafe } from "@/lib/services/property-inquiry.service";
 import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository";
 import { enqueueEasyBrokerCreate, enqueueEasyBrokerAssign, enqueueManyChatFlow } from "@/lib/services/retry.service";
@@ -42,6 +44,7 @@ export const ADVISOR_LEAD_FIELD_IDS = {
 /**
  * Contexto que agrega el asistente conversacional. Solo datos que el
  * cliente dio o que se verificaron; nunca se inventa un nombre ni un dato.
+ * No incluye enlaces al panel: el asesor recibe todo en el mismo mensaje.
  */
 export interface LeadConversationContext {
   reason: string;
@@ -50,12 +53,11 @@ export interface LeadConversationContext {
   budget?: string | null;
   additionalNeeds?: string[];
   summary?: string | null;
-  conversationUrl?: string | null;
+  /** Otras propiedades que el cliente mencionó (además de la del lead). */
+  otherProperties?: { publicId: string; title?: string | null; url?: string | null }[];
 }
 
-// Los campos de texto de ManyChat se leen en el WhatsApp del asesor: acotados.
-const RELATED_INFO_MAX = 900;
-
+/** Contexto del cliente para el mensaje de la solicitud de contacto en EasyBroker. */
 function buildConversationLines(context: LeadConversationContext): string[] {
   return [
     `Motivo: ${context.reason}`,
@@ -64,7 +66,6 @@ function buildConversationLines(context: LeadConversationContext): string[] {
     context.budget ? `Presupuesto: ${context.budget}` : null,
     context.additionalNeeds?.length ? `Otras necesidades: ${context.additionalNeeds.join(", ")}` : null,
     context.summary ? `Resumen: ${context.summary}` : null,
-    context.conversationUrl ? `Conversación: ${context.conversationUrl}` : null,
   ].filter((line): line is string => Boolean(line));
 }
 
@@ -74,21 +75,20 @@ export function buildAdvisorLeadFields(input: {
   interest: string;
   routeLabel: string;
   propertyPublicId?: string;
-  property?: EasyBrokerProperty | null;
+  property?: NoticeProperty | null;
   propertyData?: string;
   conversation?: LeadConversationContext;
 }): ManyChatCustomField[] {
   const cleanPhone = input.phone.replace(/\D/g, "");
   const reference = input.propertyPublicId || (input.routeLabel === "Campaña propiedad" ? "Campaña propiedad" : input.routeLabel);
-  const propertyInfo = input.property
-    ? [input.property.title, input.property.location, input.property.public_url].filter(Boolean).join("\n")
-    : input.propertyData?.trim() || "Sin información adicional";
-  const relatedInfo = input.conversation
-    ? [input.property ? propertyInfo : null, ...buildConversationLines(input.conversation)]
-        .filter(Boolean)
-        .join("\n")
-        .slice(0, RELATED_INFO_MAX)
-    : propertyInfo;
+  // Ficha técnica completa + enlace de EasyBroker + lo que busca el cliente, en el mismo mensaje.
+  const relatedInfo = buildAdvisorNoticeText({
+    property: input.property ?? null,
+    propertyData: input.propertyData,
+    client: input.conversation
+      ? { ...input.conversation, otherProperties: input.conversation.otherProperties?.filter((p) => p.publicId !== input.property?.public_id) }
+      : null,
+  });
 
   return [
     { fieldId: ADVISOR_LEAD_FIELD_IDS.name, value: input.name.trim() },
@@ -98,6 +98,29 @@ export function buildAdvisorLeadFields(input: {
     { fieldId: ADVISOR_LEAD_FIELD_IDS.relatedInfo, value: relatedInfo },
     { fieldId: ADVISOR_LEAD_FIELD_IDS.contactUrl, value: `https://wa.me/${cleanPhone}` },
   ];
+}
+
+/**
+ * Ficha desde el índice local (PropertyCacheEntry) cuando EasyBroker no
+ * respondió o en reasignaciones: mejor una ficha parcial que ninguna.
+ */
+export async function propertyNoticeFromCache(companyId: string, publicId: string): Promise<NoticeProperty | null> {
+  try {
+    const entry = await prisma.propertyCacheEntry.findUnique({ where: { companyId_publicId: { companyId, publicId } } });
+    if (!entry) return null;
+    return {
+      public_id: entry.publicId,
+      title: entry.title,
+      property_type: entry.propertyType,
+      location: entry.location,
+      public_url: entry.publicUrl,
+      operations: Array.isArray(entry.operations) ? (entry.operations as NoticeProperty["operations"]) : null,
+      bedrooms: entry.bedrooms,
+      bathrooms: entry.bathrooms,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface IncomingLeadInput {
@@ -536,13 +559,14 @@ export async function processIncomingLead(
 
   let notified = false;
   if (advisor.manyChatSubscriberId) {
+    const noticeProperty = property ?? (propertyPublicId ? await propertyNoticeFromCache(companyId, propertyPublicId) : null);
     const advisorLeadFields = buildAdvisorLeadFields({
       name: input.nombre,
       phone,
       interest: input.interesCliente,
       routeLabel,
       propertyPublicId,
-      property,
+      property: noticeProperty,
       propertyData: input.datosPropiedad,
       conversation: input.conversation,
     });
