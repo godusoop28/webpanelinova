@@ -8,6 +8,8 @@ import { leadStatusLabel } from "@/lib/lead-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LeadActionsPanel } from "@/components/leads/lead-actions-panel";
+import { IntegrationNoticeDetails } from "@/components/leads/integration-notice";
+import { JOB_ACTION_LABELS, noticeReason, noticeTitle } from "@/lib/integration-notice";
 
 function formatDateTime(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
@@ -30,7 +32,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const detail = await getLeadDetail(id);
   if (!detail) notFound();
 
-  const { lead, assignments, auditLogs } = detail;
+  const { lead, assignments, auditLogs, notice, jobs } = detail;
   const digits = lead.phone.replace(/\D/g, "");
 
   const companyId = await getDefaultCompanyId();
@@ -116,6 +118,41 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   <span className="text-xs text-ink-500">{formatDateTime(assignment.assignedAt)}</span>
                   {assignment.easyBrokerConfirmed && <Badge tone="success">EasyBroker confirmado</Badge>}
                   {assignment.manyChatNotified && <Badge tone="success">ManyChat notificado</Badge>}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {jobs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Integraciones</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {notice ? (
+              <IntegrationNoticeDetails notice={notice} className="text-sm" />
+            ) : (
+              <p className="text-sm text-ink-500">Sin acciones pendientes.</p>
+            )}
+            <div className="space-y-2">
+              {jobs.map((job) => (
+                <div key={job.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-100 p-3 text-sm">
+                  <span className="font-medium text-ink-900">{JOB_ACTION_LABELS[job.type] ?? job.type}</span>
+                  <Badge tone={job.status === "SUCCESS" ? "success" : job.status === "RETRYING" || job.status === "PENDING" ? "warning" : job.status === "CANCELLED" ? "neutral" : "danger"}>
+                    {noticeTitle(job)}
+                  </Badge>
+                  <span className="text-xs text-ink-500">{job.target}</span>
+                  <span className="text-xs text-ink-500">
+                    {job.attempts} intento(s){job.lastAttemptAt ? ` · último ${formatDateTime(job.lastAttemptAt)}` : ""}
+                  </span>
+                  {job.status !== "SUCCESS" && (job.lastError || job.errorKind) && (
+                    <p className="basis-full text-xs text-ink-600">
+                      {noticeReason(job)}
+                      {job.errorCode ? ` [${job.errorCode}]` : ""}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

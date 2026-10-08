@@ -38,8 +38,10 @@ export interface LeadView {
   metodoAsignacion: string;
   manyChatNotificado: boolean;
   easyBrokerConfirmado: boolean;
-  /** Mensaje del AuditLog de error más reciente, o "" si el lead no falló. */
+  /** Error más reciente del historial que no corresponde a una acción de integración, o "". */
   error: string;
+  /** Estado vigente de las acciones de integración (ManyChat/EasyBroker) que piden atención, o null. */
+  aviso: import("@/lib/integration-notice").IntegrationNotice | null;
   /** Estado de asignación del lead (PENDING/ASSIGNED/CONFIRMED/FAILED), distinto del estado del proceso y de EasyBroker. */
   assignmentStatus: string;
   /** ID público de EasyBroker de la propiedad, si se identificó. */

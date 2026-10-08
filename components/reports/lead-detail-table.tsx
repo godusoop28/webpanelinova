@@ -5,6 +5,7 @@ import { AssignmentBadge, EasyBrokerBadge, LeadStatusBadge, NoticeBadge } from "
 import { formatMexicoCityDateTime } from "@/lib/timezone";
 import { toCanonicalRoute, ROUTE_LABELS, type RawInterestType } from "@/lib/reporting/report-aggregation";
 import type { LeadView } from "@/lib/types";
+import { IntegrationNoticeDetails } from "@/components/leads/integration-notice";
 
 export function LeadDetailTable({
   leads,
@@ -65,6 +66,7 @@ export function LeadDetailTable({
                       {lead.nombre || "Sin nombre"}
                     </Link>
                     <span className="block whitespace-nowrap text-xs text-ink-500">{lead.telefono || "—"}</span>
+                    {lead.aviso && <IntegrationNoticeDetails notice={lead.aviso} className="mt-0.5" compact />}
                     {lead.error && (
                       <span className="mt-0.5 block max-w-56 truncate text-[11px] text-rose-700" title={lead.error}>
                         {lead.error}

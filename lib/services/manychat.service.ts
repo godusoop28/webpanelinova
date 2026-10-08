@@ -1,9 +1,20 @@
 import "server-only";
 import { manyChatRequest, ManyChatApiError, ManyChatTimeoutError } from "@/lib/integrations/manychat.client";
+import { classifyManyChatFailure, ManyChatConfigError } from "@/lib/integrations/manychat-errors";
 import { withRetry } from "@/lib/retry";
 import { env } from "@/lib/env";
 
 const RETRY_OPTIONS = { maxAttempts: 3, baseDelayMs: 1000, maxDelayMs: 6000 };
+/**
+ * Reintento inmediato solo para fallos recuperables sin Retry-After: si
+ * ManyChat pide esperar, la espera la respeta la cola de reintentos.
+ */
+function inlineRetryable(idempotent: boolean) {
+  return (error: unknown) => {
+    const failure = classifyManyChatFailure(error, { idempotent });
+    return failure.retryable && failure.retryAfterMs == null;
+  };
+}
 
 export interface ManyChatCustomField {
   fieldId: number;
@@ -28,14 +39,20 @@ export async function setCustomFields(subscriberId: string, fields: ManyChatCust
           fields: fields.map((f) => ({ field_id: f.fieldId, field_value: f.value })),
         },
       }),
-    RETRY_OPTIONS
+    // Escribir campos es idempotente: un timeout sí puede repetirse.
+    { ...RETRY_OPTIONS, shouldRetry: inlineRetryable(true) }
   );
 }
 
+/**
+ * Reintenta en la misma petición solo 429/5xx. Un 4xx es permanente y un
+ * timeout es ambiguo (el flujo pudo haberse enviado): ambos se devuelven
+ * al llamador sin repetir el envío.
+ */
 export async function sendFlow(subscriberId: string, flowNs: string): Promise<void> {
   await withRetry(
     () => manyChatRequest({ path: "/fb/sending/sendFlow", body: { subscriber_id: subscriberId, flow_ns: flowNs } }),
-    RETRY_OPTIONS
+    { ...RETRY_OPTIONS, shouldRetry: inlineRetryable(false) }
   );
 }
 
@@ -53,7 +70,7 @@ export async function notifyAdvisor(input: {
 }): Promise<{ customFieldsUpdated: boolean }> {
   const flowNs = input.flowNs ?? env.manychat.advisorFlowId;
   if (!flowNs) {
-    throw new Error("MANYCHAT_ADVISOR_FLOW_ID no está configurado y no se pasó un flowNs explícito.");
+    throw new ManyChatConfigError("MANYCHAT_ADVISOR_FLOW_ID", "Falta MANYCHAT_ADVISOR_FLOW_ID: no hay flujo configurado para avisar al asesor.");
   }
 
   let customFieldsUpdated = false;
@@ -129,4 +146,4 @@ export async function getSubscriberInfo(subscriberId: string): Promise<ManyChatS
   return result.data ?? null;
 }
 
-export { ManyChatApiError, ManyChatTimeoutError };
+export { ManyChatApiError, ManyChatTimeoutError, ManyChatConfigError };

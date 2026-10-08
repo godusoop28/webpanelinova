@@ -1,19 +1,39 @@
 import "server-only";
-import type { Lead, LeadAssignment, AuditLog, AssignmentMethod } from "@prisma/client";
+import type { Lead, LeadAssignment, AuditLog, AssignmentMethod, IntegrationJob } from "@prisma/client";
 import type { LeadView } from "@/lib/types";
 import { findLeadsPaginated, findLeadById, type LeadFilters } from "@/lib/repositories/lead.repository";
 import { leadStatusLabel } from "@/lib/lead-status";
 import { prisma } from "@/lib/db";
+import { currentIntegrationNotice, noticeTarget, uncoveredAuditError, type IntegrationNotice } from "@/lib/integration-notice";
 
 export { LEAD_STATUS_LABELS, leadStatusLabel } from "@/lib/lead-status";
 
 const DIRECT_METHODS: AssignmentMethod[] = ["DIRECT_PROPERTY_ADVISOR", "CAMPAIGN_DIRECT"];
 
+type NoticeJobRow = Pick<IntegrationJob, "id" | "type" | "status" | "attempts" | "lastError" | "errorKind" | "errorCode" | "lastAttemptAt" | "nextRetryAt" | "createdAt" | "payload">;
+
 type LeadWithRelations = Lead & {
-  assignedAdvisor: { id: string; name: string; phone: string } | null;
+  assignedAdvisor: { id: string; name: string; phone: string; manyChatSubscriberId: string | null } | null;
   assignments: LeadAssignment[];
   auditLogs: AuditLog[];
+  integrationJobs: NoticeJobRow[];
 };
+
+/**
+ * Aviso vigente del lead según el estado real de sus trabajos. Si el aviso
+ * al asesor ya quedó confirmado en la asignación, un MANYCHAT_FLOW antiguo
+ * deja de mostrarse como pendiente (el historial lo conserva).
+ */
+export function leadIntegrationNotice(
+  jobs: NoticeJobRow[],
+  advisor: { name: string; manyChatSubscriberId: string | null } | null,
+  assignmentNotified: boolean
+): IntegrationNotice | null {
+  return currentIntegrationNotice(jobs, {
+    targetFor: (job) => noticeTarget(job as NoticeJobRow, advisor),
+    confirmedTypes: assignmentNotified ? ["MANYCHAT_FLOW"] : [],
+  });
+}
 
 function dbLeadToView(lead: LeadWithRelations): LeadView {
   const digits = lead.phone.replace(/\D/g, "");
@@ -35,7 +55,8 @@ function dbLeadToView(lead: LeadWithRelations): LeadView {
     metodoAsignacion: latest ? (DIRECT_METHODS.includes(latest.method) ? "Directa" : "Ruleta") : "",
     manyChatNotificado: latest?.manyChatNotified ?? false,
     easyBrokerConfirmado: latest?.easyBrokerConfirmed ?? false,
-    error: lead.auditLogs[0]?.message ?? "",
+    error: uncoveredAuditError(lead.auditLogs, lead.integrationJobs, latest?.manyChatNotified ?? false),
+    aviso: leadIntegrationNotice(lead.integrationJobs, lead.assignedAdvisor, latest?.manyChatNotified ?? false),
     assignmentStatus: lead.assignmentStatus,
     propiedadId: lead.easyBrokerPropertyId ?? "",
     tieneAsignacion: Boolean(latest),
@@ -95,11 +116,23 @@ export interface LeadDetail {
   lead: Lead & { assignedAdvisor: { id: string; name: string; phone: string; easyBrokerEmail: string | null } | null };
   assignments: (LeadAssignment & { advisor: { id: string; name: string } })[];
   auditLogs: AuditLog[];
+  /** Aviso vigente de integraciones (null si todo está confirmado). */
+  notice: IntegrationNotice | null;
+  /** Historial de acciones de integración, sin payload. */
+  jobs: (Omit<NoticeJobRow, "payload"> & { target: string })[];
 }
 
 export async function getLeadDetail(id: string): Promise<LeadDetail | null> {
   const result = await findLeadById(id);
   if (!result) return null;
-  const { assignments, auditLogs, ...lead } = result;
-  return { lead, assignments, auditLogs } as LeadDetail;
+  const { assignments, auditLogs, integrationJobs, ...lead } = result;
+  const advisor = lead.assignedAdvisor ? { name: lead.assignedAdvisor.name, manyChatSubscriberId: lead.assignedAdvisor.manyChatSubscriberId } : null;
+  const notified = assignments[0]?.manyChatNotified ?? false;
+  return {
+    lead,
+    assignments,
+    auditLogs,
+    notice: leadIntegrationNotice(integrationJobs, advisor, notified),
+    jobs: integrationJobs.map(({ payload, ...job }) => ({ ...job, target: noticeTarget({ type: job.type, payload }, advisor) })),
+  } as LeadDetail;
 }

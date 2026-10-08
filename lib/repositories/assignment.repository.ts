@@ -88,3 +88,48 @@ export function updateAssignmentStatus(
 export function findAssignmentsByLeadId(leadId: string): Promise<LeadAssignment[]> {
   return prisma.leadAssignment.findMany({ where: { leadId }, orderBy: { assignedAt: "desc" } });
 }
+
+export interface LeadNoticeState {
+  leadId: string;
+  leadStatus: string;
+  assignedAdvisorId: string | null;
+  assignedAdvisorName: string | null;
+  assignedAdvisorSubscriberId: string | null;
+  /** Asignación más reciente del lead (la que el aviso debe confirmar). */
+  assignment: { id: string; advisorId: string; manyChatNotified: boolean } | null;
+}
+
+/** Estado actual de asignación y aviso de un lead, para decidir si un aviso pendiente todavía aplica. */
+export async function findLeadNoticeState(leadId: string): Promise<LeadNoticeState | null> {
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: {
+      id: true,
+      status: true,
+      assignedAdvisorId: true,
+      assignedAdvisor: { select: { name: true, manyChatSubscriberId: true } },
+      assignments: { orderBy: { assignedAt: "desc" }, take: 1, select: { id: true, advisorId: true, manyChatNotified: true } },
+    },
+  });
+  if (!lead) return null;
+  return {
+    leadId: lead.id,
+    leadStatus: lead.status,
+    assignedAdvisorId: lead.assignedAdvisorId,
+    assignedAdvisorName: lead.assignedAdvisor?.name ?? null,
+    assignedAdvisorSubscriberId: lead.assignedAdvisor?.manyChatSubscriberId ?? null,
+    assignment: lead.assignments[0] ?? null,
+  };
+}
+
+/**
+ * Aviso recuperado: marca SOLO el paso pendiente. No toca asesor, ruleta ni
+ * EasyBroker; el lead pasa de "Notificado" (pipeline terminado sin aviso
+ * confirmado) a "Completado" únicamente si sigue en ese estado.
+ */
+export async function markAssignmentNotified(leadId: string, assignmentId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.leadAssignment.update({ where: { id: assignmentId }, data: { manyChatNotified: true } }),
+    prisma.lead.updateMany({ where: { id: leadId, status: "NOTIFIED" }, data: { status: "COMPLETED" } }),
+  ]);
+}

@@ -75,7 +75,12 @@ enum IntegrationJobStatus {
   PENDING
   RETRYING
   SUCCESS
+  /** Fallo permanente (configuración, validación, canal) o intentos agotados. No se reintenta solo. */
   FAILED
+  /** Timeout o caída de red durante un envío: el proveedor pudo haberlo ejecutado. Requiere revisión. */
+  UNCERTAIN
+  /** Ya no aplica (el lead cambió de asesor o el aviso se confirmó por otra vía). */
+  CANCELLED
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +368,14 @@ model IntegrationJob {
   attempts    Int       @default(0)
   lastError   String?
   nextRetryAt DateTime  @default(now())
+
+  /** Clasificación del último fallo (lib/integrations/manychat-errors.ts): CHANNEL, FLOW, AUTH, TIMEOUT… */
+  errorKind     String?
+  /** Código disponible del último fallo: HTTP_400, BODY_ERROR_200, TIMEOUT, CONFIG_… */
+  errorCode     String?
+  lastAttemptAt DateTime?
+  /** Cuándo quedó confirmado (SUCCESS) o descartado (CANCELLED). El historial de fallos se conserva en AuditLog. */
+  resolvedAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

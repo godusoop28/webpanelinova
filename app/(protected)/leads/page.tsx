@@ -13,6 +13,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { EmptyState, ErrorState } from "@/components/ui/state";
 import { TableSearch, UrlSelect } from "@/components/table-search";
 import { AssignmentBadge, EasyBrokerBadge, LeadStatusBadge, NoticeBadge } from "@/components/leads/lead-badges";
+import { IntegrationNoticeDetails } from "@/components/leads/integration-notice";
 
 const PAGE_SIZE = 25;
 
@@ -157,6 +158,7 @@ export default async function LeadsPage({
                                 {lead.nombre || "Sin nombre"}
                               </Link>
                               <p className="whitespace-nowrap text-xs text-ink-500">{lead.telefono || "—"}</p>
+                              {lead.aviso && <IntegrationNoticeDetails notice={lead.aviso} className="mt-0.5" compact />}
                               {lead.error && (
                                 <p className="mt-0.5 max-w-56 truncate text-[11px] text-rose-700" title={lead.error}>
                                   {lead.error}

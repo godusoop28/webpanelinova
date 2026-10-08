@@ -1,31 +1,11 @@
 import "server-only";
 import { env } from "@/lib/env";
+import { ManyChatApiError, ManyChatNetworkError, ManyChatTimeoutError, parseRetryAfter } from "@/lib/integrations/manychat-errors";
 
 const BASE_URL = "https://api.manychat.com";
 const DEFAULT_TIMEOUT_MS = 10000;
 
-export class ManyChatApiError extends Error {
-  constructor(
-    public status: number,
-    public statusText: string,
-    public body: unknown
-  ) {
-    super(`ManyChat API error ${status} ${statusText}`);
-    this.name = "ManyChatApiError";
-  }
-}
-
-/**
- * La petición salió pero no hubo respuesta a tiempo: ManyChat pudo haberla
- * aceptado. Para envíos al cliente esto es AMBIGUO y no debe reintentarse a
- * ciegas (se duplicaría el mensaje).
- */
-export class ManyChatTimeoutError extends Error {
-  constructor(public path: string, timeoutMs: number) {
-    super(`[MANYCHAT] Timeout tras ${timeoutMs}ms en ${path}`);
-    this.name = "ManyChatTimeoutError";
-  }
-}
+export { ManyChatApiError, ManyChatTimeoutError, ManyChatNetworkError } from "@/lib/integrations/manychat-errors";
 
 interface ManyChatRequestOptions {
   method?: "GET" | "POST";
@@ -65,10 +45,10 @@ export async function manyChatRequest<T>(options: ManyChatRequestOptions): Promi
     const text = await response.text();
     const data = text ? safeJsonParse(text) : null;
 
-    // ManyChat a veces responde HTTP 200 con {"status":"error"}.
+    // ManyChat a veces responde HTTP 200 con {"status":"error"}: no es éxito.
     const bodyStatus = (data as { status?: unknown } | null)?.status;
     if (!response.ok || bodyStatus === "error") {
-      throw new ManyChatApiError(response.status, response.statusText, data);
+      throw new ManyChatApiError(response.status, response.statusText, data, `${method} ${path}`, parseRetryAfter(response.headers.get("retry-after")));
     }
     return data as T;
   } catch (error) {
@@ -76,6 +56,8 @@ export async function manyChatRequest<T>(options: ManyChatRequestOptions): Promi
     if (error instanceof Error && error.name === "AbortError") {
       throw new ManyChatTimeoutError(`${method} ${path}`, timeoutMs);
     }
+    // fetch lanza TypeError ante fallos de red; no se sabe si la petición llegó.
+    if (error instanceof TypeError) throw new ManyChatNetworkError(`${method} ${path}`, error);
     throw error;
   } finally {
     clearTimeout(timeout);

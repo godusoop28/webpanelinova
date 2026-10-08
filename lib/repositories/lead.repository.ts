@@ -3,6 +3,21 @@ import type { Lead, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { PENDING_STATUS_FILTER } from "@/lib/lead-status";
 
+/** Campos de IntegrationJob que necesita el panel (el payload solo se lee en servidor para saber el destino). */
+export const INTEGRATION_JOB_NOTICE_SELECT = {
+  id: true,
+  type: true,
+  status: true,
+  attempts: true,
+  lastError: true,
+  errorKind: true,
+  errorCode: true,
+  lastAttemptAt: true,
+  nextRetryAt: true,
+  createdAt: true,
+  payload: true,
+} satisfies Prisma.IntegrationJobSelect;
+
 export interface LeadFilters {
   companyId: string;
   status?: string;
@@ -60,9 +75,11 @@ export async function findLeadsPaginated(
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        assignedAdvisor: { select: { id: true, name: true, phone: true } },
+        assignedAdvisor: { select: { id: true, name: true, phone: true, manyChatSubscriberId: true } },
         assignments: { take: 1, orderBy: { assignedAt: "desc" } },
-        auditLogs: { where: { status: "error" }, orderBy: { createdAt: "desc" }, take: 1 },
+        // Varios: los de integraciones se explican con el estado del trabajo, no con el texto del log.
+        auditLogs: { where: { status: "error" }, orderBy: { createdAt: "desc" }, take: 5 },
+        integrationJobs: { orderBy: { createdAt: "desc" }, take: 10, select: INTEGRATION_JOB_NOTICE_SELECT },
       },
     }),
     prisma.lead.count({ where }),
@@ -77,6 +94,7 @@ export function findLeadById(id: string) {
       assignedAdvisor: true,
       assignments: { include: { advisor: true }, orderBy: { assignedAt: "desc" } },
       auditLogs: { orderBy: { createdAt: "desc" } },
+      integrationJobs: { orderBy: { createdAt: "desc" }, select: INTEGRATION_JOB_NOTICE_SELECT },
     },
   });
 }

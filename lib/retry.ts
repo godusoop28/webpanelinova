@@ -10,6 +10,8 @@ export interface RetryOptions {
   baseDelayMs?: number;
   maxDelayMs?: number;
   onAttemptFailed?: (attempt: number, error: unknown) => void;
+  /** withRetry only: return false to give up immediately (permanent or ambiguous errors). Defaults to retrying everything. */
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 export function sleep(ms: number): Promise<void> {
@@ -22,7 +24,7 @@ function backoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number):
 
 /** Retries `fn` while it throws. Re-throws the last error once attempts are exhausted. */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
-  const { maxAttempts = 5, baseDelayMs = 1000, maxDelayMs = 8000, onAttemptFailed } = options;
+  const { maxAttempts = 5, baseDelayMs = 1000, maxDelayMs = 8000, onAttemptFailed, shouldRetry } = options;
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -30,7 +32,7 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions =
     } catch (error) {
       lastError = error;
       onAttemptFailed?.(attempt, error);
-      if (attempt === maxAttempts) break;
+      if (attempt === maxAttempts || (shouldRetry && !shouldRetry(error))) break;
       await sleep(backoffDelay(attempt, baseDelayMs, maxDelayMs));
     }
   }

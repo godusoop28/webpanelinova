@@ -599,16 +599,23 @@ export async function processIncomingLead(
         status: "error",
         message: error instanceof ManyChatApiError ? error.message : error instanceof Error ? error.message : "Error desconocido",
       });
-      const flowNs = env.manychat.advisorFlowId;
-      if (flowNs) {
-        // El retry también debe volver a escribir los campos antes de lanzar
-        // el flow. Nunca reintentar sólo sendFlow con valores antiguos.
-        await enqueueManyChatFlow(companyId, lead.id, {
+      // La asignación ya quedó registrada: solo este paso queda pendiente.
+      // El trabajo guarda la clasificación real del fallo (recuperable,
+      // permanente o incierto) y, si falta el flujo, lo deja a la vista como
+      // configuración pendiente en lugar de descartarlo en silencio. El retry
+      // vuelve a escribir los campos antes del flow: nunca sendFlow solo.
+      await enqueueManyChatFlow(
+        companyId,
+        lead.id,
+        {
           subscriberId: advisor.manyChatSubscriberId,
-          flowNs,
+          flowNs: env.manychat.advisorFlowId ?? "",
           fields: advisorLeadFields,
-        });
-      }
+          advisorId: advisor.id,
+          assignmentId: assignment.id,
+        },
+        error
+      );
     }
   } else {
     await logAuditEvent({
