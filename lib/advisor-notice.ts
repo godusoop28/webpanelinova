@@ -43,11 +43,62 @@ export interface NoticeClientContext {
 }
 
 /**
- * Tope del texto: si el flujo de ManyChat envía una plantilla de WhatsApp,
- * cada variable admite máximo 1024 caracteres; se deja margen. Lo que no
- * cabe es la parte final de la descripción, nunca la ficha ni el enlace.
+ * Tope por defecto del texto. Lo que no cabe es la parte final de la
+ * descripción, nunca la ficha ni el enlace. Para el aviso real manda
+ * advisorNoticeBudget(): el límite es del cuerpo completo de la plantilla.
  */
 export const ADVISOR_NOTICE_MAX = 1000;
+
+// Campos usados por el flow de ManyChat "Aviso asesor nuevo lead".
+// Estos IDs corresponden a la cuenta actual de Century 21 Inova.
+export const ADVISOR_LEAD_FIELD_IDS = {
+  name: 14780313,
+  phone: 14780314,
+  requestType: 14780316,
+  relatedInfo: 14780317,
+  reference: 14780318,
+  contactUrl: 14780319,
+} as const;
+
+/**
+ * WhatsApp rechaza una plantilla cuyo cuerpo, YA con las variables
+ * sustituidas, pasa de 1024 caracteres. El flujo del asesor mete todos los
+ * campos en el mismo mensaje más su texto fijo, que no se conoce desde aquí:
+ * se reserva margen para él. Con la ficha completa (~990 caracteres solo en
+ * relatedInfo) todos los avisos de propiedad empezaron a fallar con HTTP 400.
+ */
+export const TEMPLATE_BODY_LIMIT = 1024;
+export const TEMPLATE_STATIC_RESERVE = 300;
+const MIN_RELATED_INFO = 250;
+
+/** Caracteres disponibles para relatedInfo según lo que ocupan los demás campos. */
+export function advisorNoticeBudget(otherValues: string[]): number {
+  const used = otherValues.reduce((sum, value) => sum + value.length, 0);
+  return Math.max(MIN_RELATED_INFO, TEMPLATE_BODY_LIMIT - TEMPLATE_STATIC_RESERVE - used);
+}
+
+/** Recorta un aviso ya armado: primero quita la descripción, luego recorta el final. */
+export function shrinkNoticeText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const withoutDescription = text
+    .split("\n")
+    .filter((line) => !line.startsWith("Descripción: "))
+    .join("\n");
+  return withoutDescription.length <= max ? withoutDescription : truncate(withoutDescription, max);
+}
+
+/**
+ * Ajusta los campos del aviso al presupuesto de la plantilla. Se aplica
+ * también a trabajos antiguos de la cola, cuyo texto se armó con el tope
+ * anterior. Solo toca relatedInfo; los demás campos se envían tal cual.
+ */
+export function fitAdvisorLeadFields<T extends { fieldId: number; value: string }>(fields: T[]): T[] {
+  const related = fields.find((field) => field.fieldId === ADVISOR_LEAD_FIELD_IDS.relatedInfo);
+  if (!related) return fields;
+  const budget = advisorNoticeBudget(fields.filter((field) => field !== related).map((field) => field.value));
+  if (related.value.length <= budget) return fields;
+  return fields.map((field) => (field === related ? { ...field, value: shrinkNoticeText(field.value, budget) } : field));
+}
 
 const OPERATION_LABELS: Record<string, string> = { sale: "Venta", rental: "Renta", temporary_rental: "Renta temporal" };
 

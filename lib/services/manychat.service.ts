@@ -3,6 +3,7 @@ import { manyChatRequest, ManyChatApiError, ManyChatTimeoutError } from "@/lib/i
 import { classifyManyChatFailure, ManyChatConfigError } from "@/lib/integrations/manychat-errors";
 import { withRetry } from "@/lib/retry";
 import { env } from "@/lib/env";
+import { fitAdvisorLeadFields } from "@/lib/advisor-notice";
 
 const RETRY_OPTIONS = { maxAttempts: 3, baseDelayMs: 1000, maxDelayMs: 6000 };
 /**
@@ -75,7 +76,8 @@ export async function notifyAdvisor(input: {
 
   let customFieldsUpdated = false;
   if (input.customFields && input.customFields.length > 0) {
-    await setCustomFields(input.advisorManyChatSubscriberId, input.customFields);
+    // Todos los avisos usan la misma plantilla: se ajustan a su límite de cuerpo.
+    await setCustomFields(input.advisorManyChatSubscriberId, fitAdvisorLeadFields(input.customFields));
     customFieldsUpdated = true;
   }
   await sendFlow(input.advisorManyChatSubscriberId, flowNs);

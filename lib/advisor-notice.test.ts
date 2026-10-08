@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildAdvisorNoticeText, type NoticeProperty } from "./advisor-notice";
+import {
+  ADVISOR_LEAD_FIELD_IDS,
+  TEMPLATE_BODY_LIMIT,
+  TEMPLATE_STATIC_RESERVE,
+  advisorNoticeBudget,
+  buildAdvisorNoticeText,
+  fitAdvisorLeadFields,
+  type NoticeProperty,
+} from "./advisor-notice";
 
 const property: NoticeProperty = {
   public_id: "EB-AB1234",
@@ -62,5 +70,43 @@ describe("buildAdvisorNoticeText", () => {
 
   it("sin datos devuelve un texto neutro", () => {
     expect(buildAdvisorNoticeText({})).toBe("Sin información adicional");
+  });
+});
+
+describe("límite del cuerpo de la plantilla de WhatsApp", () => {
+  const others = ["Clau", "+523312288632", "Propiedad", "EB-XC6724", "https://wa.me/523312288632"];
+
+  it("el aviso con ficha completa cabe en el presupuesto y conserva ficha y enlace", () => {
+    const longProperty = { ...property, description: "Hermoso departamento con vista. ".repeat(60) };
+    const budget = advisorNoticeBudget(others);
+    const text = buildAdvisorNoticeText({ property: longProperty, max: budget });
+    expect(text.length).toBeLessThanOrEqual(budget);
+    expect(text).toContain("EB-AB1234");
+    expect(text).toContain(property.public_url!);
+    expect(budget + others.join("").length).toBeLessThanOrEqual(TEMPLATE_BODY_LIMIT - TEMPLATE_STATIC_RESERVE);
+  });
+
+  it("los trabajos antiguos de ~990 caracteres se recortan quitando primero la descripción", () => {
+    const old = buildAdvisorNoticeText({ property: { ...property, description: "Texto largo de descripción. ".repeat(60) }, max: 1000 });
+    expect(old.length).toBeGreaterThan(900);
+    const fields = [
+      { fieldId: ADVISOR_LEAD_FIELD_IDS.name, value: others[0] },
+      { fieldId: ADVISOR_LEAD_FIELD_IDS.phone, value: others[1] },
+      { fieldId: ADVISOR_LEAD_FIELD_IDS.requestType, value: others[2] },
+      { fieldId: ADVISOR_LEAD_FIELD_IDS.reference, value: others[3] },
+      { fieldId: ADVISOR_LEAD_FIELD_IDS.relatedInfo, value: old },
+      { fieldId: ADVISOR_LEAD_FIELD_IDS.contactUrl, value: others[4] },
+    ];
+    const fitted = fitAdvisorLeadFields(fields);
+    const related = fitted.find((f) => f.fieldId === ADVISOR_LEAD_FIELD_IDS.relatedInfo)!.value;
+    expect(fitted.reduce((sum, f) => sum + f.value.length, 0)).toBeLessThanOrEqual(TEMPLATE_BODY_LIMIT - TEMPLATE_STATIC_RESERVE);
+    expect(related).not.toContain("Descripción:");
+    expect(related).toContain(property.public_url!);
+    expect(fitted.filter((f) => f.fieldId !== ADVISOR_LEAD_FIELD_IDS.relatedInfo)).toEqual(fields.filter((f) => f.fieldId !== ADVISOR_LEAD_FIELD_IDS.relatedInfo));
+  });
+
+  it("un aviso corto no se modifica", () => {
+    const fields = [{ fieldId: ADVISOR_LEAD_FIELD_IDS.relatedInfo, value: "Sin información adicional" }];
+    expect(fitAdvisorLeadFields(fields)).toBe(fields);
   });
 });

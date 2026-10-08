@@ -27,6 +27,7 @@ import {
   type ManyChatFailure,
 } from "@/lib/integrations/manychat-errors";
 import { failureAuditMessage, type JobStatus } from "@/lib/integration-notice";
+import { fitAdvisorLeadFields } from "@/lib/advisor-notice";
 
 /** Fase 20: 1 min, 5 min, 15 min, 1 h — then FAILED for good, visible in AuditLog. Only for recoverable errors. */
 export const BACKOFF_MINUTES = [1, 5, 15, 60];
@@ -183,8 +184,10 @@ async function runManyChatFlow(job: IntegrationJob): Promise<JobResult> {
   }
   // El flow del asesor usa Custom Fields del propio asesor: reescribir
   // primero los datos de ESTE lead evita que el retry mande el lead anterior.
+  // Los trabajos antiguos traen el texto largo (hasta 1000 caracteres) que
+  // excedía el cuerpo de la plantilla: se ajusta antes de reenviar.
   if (payload.fields?.length) {
-    await setCustomFields(payload.subscriberId, payload.fields);
+    await setCustomFields(payload.subscriberId, fitAdvisorLeadFields(payload.fields));
   }
   await sendFlow(payload.subscriberId, payload.flowNs);
   // ManyChat ya aceptó el envío: un fallo local al anotarlo no debe convertir

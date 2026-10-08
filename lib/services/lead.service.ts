@@ -23,23 +23,14 @@ import {
 } from "@/lib/services/easybroker.service";
 import { notifyAdvisor, ManyChatApiError, type ManyChatCustomField } from "@/lib/services/manychat.service";
 import { logAuditEvent } from "@/lib/services/audit.service";
-import { buildAdvisorNoticeText, type NoticeProperty } from "@/lib/advisor-notice";
+import { ADVISOR_LEAD_FIELD_IDS, advisorNoticeBudget, buildAdvisorNoticeText, type NoticeProperty } from "@/lib/advisor-notice";
 import { recordPropertyInquirySafe } from "@/lib/services/property-inquiry.service";
 import { updateAssignmentStatus } from "@/lib/repositories/assignment.repository";
 import { enqueueEasyBrokerCreate, enqueueEasyBrokerAssign, enqueueManyChatFlow } from "@/lib/services/retry.service";
 
 const MANYCHAT_SOURCE = "WhatsApp ManyChat";
 
-// Campos usados por el flow de ManyChat "Aviso asesor nuevo lead".
-// Estos IDs corresponden a la cuenta actual de Century 21 Inova.
-export const ADVISOR_LEAD_FIELD_IDS = {
-  name: 14780313,
-  phone: 14780314,
-  requestType: 14780316,
-  relatedInfo: 14780317,
-  reference: 14780318,
-  contactUrl: 14780319,
-} as const;
+export { ADVISOR_LEAD_FIELD_IDS };
 
 /**
  * Contexto que agrega el asistente conversacional. Solo datos que el
@@ -81,22 +72,27 @@ export function buildAdvisorLeadFields(input: {
 }): ManyChatCustomField[] {
   const cleanPhone = input.phone.replace(/\D/g, "");
   const reference = input.propertyPublicId || (input.routeLabel === "Campaña propiedad" ? "Campaña propiedad" : input.routeLabel);
-  // Ficha técnica completa + enlace de EasyBroker + lo que busca el cliente, en el mismo mensaje.
+  const name = input.name.trim();
+  const requestType = input.interest.trim() || input.routeLabel;
+  const contactUrl = `https://wa.me/${cleanPhone}`;
+  // Ficha técnica + enlace de EasyBroker + lo que busca el cliente, en el
+  // mismo mensaje, dentro del límite del cuerpo de la plantilla de WhatsApp.
   const relatedInfo = buildAdvisorNoticeText({
     property: input.property ?? null,
     propertyData: input.propertyData,
     client: input.conversation
       ? { ...input.conversation, otherProperties: input.conversation.otherProperties?.filter((p) => p.publicId !== input.property?.public_id) }
       : null,
+    max: advisorNoticeBudget([name, input.phone, requestType, reference, contactUrl]),
   });
 
   return [
-    { fieldId: ADVISOR_LEAD_FIELD_IDS.name, value: input.name.trim() },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.name, value: name },
     { fieldId: ADVISOR_LEAD_FIELD_IDS.phone, value: input.phone },
-    { fieldId: ADVISOR_LEAD_FIELD_IDS.requestType, value: input.interest.trim() || input.routeLabel },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.requestType, value: requestType },
     { fieldId: ADVISOR_LEAD_FIELD_IDS.reference, value: reference },
     { fieldId: ADVISOR_LEAD_FIELD_IDS.relatedInfo, value: relatedInfo },
-    { fieldId: ADVISOR_LEAD_FIELD_IDS.contactUrl, value: `https://wa.me/${cleanPhone}` },
+    { fieldId: ADVISOR_LEAD_FIELD_IDS.contactUrl, value: contactUrl },
   ];
 }
 
