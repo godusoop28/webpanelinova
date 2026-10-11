@@ -1,6 +1,7 @@
 import "server-only";
 import { easyBrokerRequest, EasyBrokerApiError } from "@/lib/integrations/easybroker.client";
 import { withRetry, pollUntil } from "@/lib/retry";
+import { samePhone } from "@/lib/phone";
 
 export interface EasyBrokerAgent {
   id?: string;
@@ -217,7 +218,7 @@ export async function findRecentContactRequest(match: {
     return (
       requests.find(
         (request) =>
-          request.phone === match.phone &&
+          samePhone(request.phone, match.phone) &&
           request.source === match.source &&
           (!match.propertyId || request.property_id === match.propertyId)
       ) ?? null

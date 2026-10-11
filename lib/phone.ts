@@ -42,3 +42,13 @@ export function normalizePhoneE164(raw: string | null | undefined, defaultCountr
 
   return `+${digits}`;
 }
+
+/**
+ * Same number regardless of format. EasyBroker stores the phone of a
+ * contact_request merged into an existing contact without the "+"
+ * ("523141255975"), so comparing raw strings misses it.
+ */
+export function samePhone(a: string | null | undefined, b: string | null | undefined): boolean {
+  const left = normalizePhoneE164(a);
+  return left !== "" && left === normalizePhoneE164(b);
+}

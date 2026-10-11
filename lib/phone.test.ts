@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizePhoneE164, phoneDigitsOnly } from "@/lib/phone";
+import { normalizePhoneE164, phoneDigitsOnly, samePhone } from "@/lib/phone";
 
 describe("phoneDigitsOnly", () => {
   it("strips everything but digits", () => {
@@ -37,5 +37,21 @@ describe("normalizePhoneE164", () => {
     expect(normalizePhoneE164("")).toBe("");
     expect(normalizePhoneE164("12")).toBe("");
     expect(normalizePhoneE164(null)).toBe("");
+  });
+});
+
+describe("samePhone", () => {
+  it("matches EasyBroker's '+'-less phone on a merged contact", () => {
+    expect(samePhone("523141255975", "+523141255975")).toBe(true);
+  });
+
+  it("matches the legacy MX mobile '1' variant", () => {
+    expect(samePhone("+5213141255975", "+523141255975")).toBe(true);
+  });
+
+  it("never matches different or missing numbers", () => {
+    expect(samePhone("+523141255976", "+523141255975")).toBe(false);
+    expect(samePhone(undefined, "+523141255975")).toBe(false);
+    expect(samePhone("", "")).toBe(false);
   });
 });
