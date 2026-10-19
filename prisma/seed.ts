@@ -7,6 +7,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
+import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
 const COMPANY_SLUG = "century21-innova";
@@ -19,7 +20,10 @@ async function main() {
     throw new Error("DATABASE_URL no está configurada. Agrégala a .env.local antes de sembrar.");
   }
 
-  const adapter = new PrismaNeon({ connectionString });
+  // Same choice as lib/db-adapter.ts (not importable here: no .ts imports under tsc).
+  const adapter = new URL(connectionString).hostname.endsWith(".neon.tech")
+    ? new PrismaNeon({ connectionString })
+    : new PrismaPg({ connectionString });
   const prisma = new PrismaClient({ adapter });
 
   const company = await prisma.company.upsert({

@@ -1,13 +1,11 @@
 import "server-only";
 import { PrismaClient } from "@prisma/client";
-import { PrismaNeon } from "@prisma/adapter-neon";
+import { createPrismaAdapter } from "@/lib/db-adapter";
 
 /**
  * Prisma 7 requires a driver adapter at runtime (schema.prisma no longer
- * carries a connection `url`). @prisma/adapter-neon wraps Neon's WebSocket
- * driver, which is what makes this safe to use from Vercel's serverless
- * functions without exhausting Postgres' connection limit the way a plain
- * TCP pool per invocation would.
+ * carries a connection `url`). lib/db-adapter.ts picks Neon's WebSocket
+ * driver for Neon hosts and a small pg pool for any other Postgres.
  */
 export class DatabaseNotConfiguredError extends Error {
   constructor() {
@@ -26,8 +24,7 @@ const globalForPrisma = globalThis as GlobalWithPrisma;
 function createClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new DatabaseNotConfiguredError();
-  const adapter = new PrismaNeon({ connectionString });
-  return new PrismaClient({ adapter });
+  return new PrismaClient({ adapter: createPrismaAdapter(connectionString) });
 }
 
 /**
