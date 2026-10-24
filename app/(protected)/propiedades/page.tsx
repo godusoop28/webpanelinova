@@ -131,6 +131,10 @@ export default async function PropiedadesPage({ searchParams }: { searchParams: 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <TableSearch placeholder="Código o nombre de propiedad…" className="sm:max-w-md" />
             <div className="flex flex-wrap gap-2 sm:ml-auto">
+              <Link href="/propiedades/inventario" className={buttonClass("primary")}>
+                <House className="size-4" aria-hidden />
+                Inventario EasyBroker
+              </Link>
               <a href={`/api/reports/properties/csv?${exportParams.toString()}`} className={buttonClass("secondary")}>
                 <FileSpreadsheet className="size-4" aria-hidden />
                 Exportar CSV

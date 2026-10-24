@@ -113,6 +113,8 @@ model Company {
   propertyDeliveries     PropertyReportDelivery[]
   propertyReportSettings PropertyReportSettings?
   advisorRounds          AdvisorRound[]
+  ebProperties           EbProperty[]
+  propertySyncState      PropertySyncState?
 
   @@map("companies")
 }
@@ -956,4 +958,85 @@ model PropertyReportSettings {
   company Company @relation(fields: [companyId], references: [id])
 
   @@map("property_report_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Inventario completo de EasyBroker (fuente de verdad) y sincronización con
+// 21Online. Lo escribe el backend (inovaback); el panel lo muestra y solo
+// pide corridas o restauraciones (requestedAt / restoreRequestedAt).
+// ---------------------------------------------------------------------------
+
+/** Copia de cada propiedad de EasyBroker. Las eliminadas en EasyBroker se conservan (deletedAt) para poder restaurarlas. */
+model EbProperty {
+  id                   String    @id @default(cuid())
+  companyId            String
+  publicId             String
+  title                String
+  propertyType         String?
+  /** Estado en EasyBroker: published | not_published | reserved | sold | rented | suspended. */
+  status               String
+  operationType        String?
+  price                Float?
+  currency             String?
+  location             String?
+  bedrooms             Float?
+  bathrooms            Float?
+  parkingSpaces        Float?
+  constructionSize     Float?
+  lotSize              Float?
+  agentName            String?
+  agentEmail           String?
+  coverImageUrl        String?
+  imageCount           Int       @default(0)
+  publicUrl            String?
+  /** Detalle completo tal como lo devuelve EasyBroker (la copia para restaurar). */
+  data                 Json
+  ebCreatedAt          String?
+  ebUpdatedAt          String?
+  firstSyncedAt        DateTime  @default(now())
+  lastSeenAt           DateTime  @default(now())
+  /** Ya no existe en EasyBroker (deletedReason = "easybroker"). */
+  deletedAt            DateTime?
+  deletedReason        String?
+  restoreRequestedAt   DateTime?
+  restoreRequestedBy   String?
+  restoreError         String?
+  restoredAt           DateTime?
+  /** Código con el que se volvió a crear en EasyBroker. */
+  restoredAsPublicId   String?
+  restoredFromPublicId String?
+  /** ListingKey del anuncio en 21Online. */
+  c21ListingKey        String?
+  /** pending | synced | error | removed | not_sent | transferred */
+  c21Status            String    @default("pending")
+  c21Hash              String?
+  c21SyncedAt          DateTime?
+  c21Error             String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, publicId])
+  @@index([companyId, deletedAt])
+  @@map("eb_properties")
+}
+
+model PropertySyncState {
+  id            String    @id @default(cuid())
+  companyId     String    @unique
+  requestedAt   DateTime?
+  requestedBy   String?
+  lastRunAt     DateTime?
+  lastSuccessAt DateTime?
+  /** running | ok | partial | error */
+  lastStatus    String?
+  lastError     String?
+  lastSummary   Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("property_sync_state")
 }
