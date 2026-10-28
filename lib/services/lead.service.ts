@@ -429,7 +429,11 @@ export async function processIncomingLead(
   // original Make scenario did — this must NOT be gated on an id that
   // never arrives, or the advisor never gets confirmed in EasyBroker.
   const baseMessage = property
-    ? `Lead recibido desde WhatsApp. El cliente vio la propiedad ${property.public_id}.\n\nDato enviado: ${input.datosPropiedad ?? ""}\nInterés: ${input.interesCliente}\nOrigen: ${MANYCHAT_SOURCE}`
+    ? `${
+        assignmentRoute === "CAMPAIGN"
+          ? `Lead de CAMPAÑA recibido desde WhatsApp. El cliente llegó por el anuncio de la propiedad ${property.public_id}.`
+          : `Lead recibido desde WhatsApp. El cliente vio la propiedad ${property.public_id}.`
+      }\n\nDato enviado: ${input.datosPropiedad ?? ""}\nInterés: ${input.interesCliente}\nOrigen: ${MANYCHAT_SOURCE}`
     : `Lead recibido desde WhatsApp. Interés: ${input.interesCliente}. Ref: ${context.requestId}`;
   const contactRequestMessage = input.conversation
     ? `${baseMessage}\n\n${buildConversationLines(input.conversation).join("\n")}`.slice(0, 2000)

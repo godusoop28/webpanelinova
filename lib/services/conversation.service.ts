@@ -107,7 +107,10 @@ export async function ingestInboundMessage(companyId: string, input: InboundMess
       },
     });
 
-    const campaignCode = current.campaignRef ? null : extractEasyBrokerCodes(text)[0] ?? null;
+    // El último código EB- que mandó el cliente manda: un código viejo (otra campaña, o mensajes
+    // guardados con la IA apagada) no debe impedir que el anuncio actual cuente como campaña.
+    const sentCode = extractEasyBrokerCodes(text)[0] ?? null;
+    const campaignCode = sentCode && sentCode !== current.campaignRef ? sentCode : null;
     const base: Prisma.ConversationUpdateInput = {
       lastSeq: seq,
       lastInboundAt: now,
